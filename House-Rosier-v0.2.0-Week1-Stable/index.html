@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Rosecourt Manor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- grain overlay -->
+<svg id="grain-defs" width="0" height="0" aria-hidden="true">
+  <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.05"/></feComponentTransfer></filter>
+</svg>
+<div id="grain-overlay" aria-hidden="true"></div>
+
+<!-- ============ TITLE ============ -->
+<section id="screen-title" class="screen visible">
+  <div class="title-bg"></div>
+  <div class="title-veil"></div>
+  <div class="title-content">
+    <p class="title-pretitle en-line">A Tale of Memory &amp; Roses</p>
+    <h1 class="game-title">
+      <span class="cn">Rosecourt Manor</span>
+    </h1>
+    <div class="title-rule"><i>❧</i></div>
+    <p class="title-tagline en-line">Who is Nait Rosier now?</p>
+    <p class="title-tagline-cn">如今的 Nait Rosier，是谁？</p>
+    <nav class="title-menu">
+      <button id="btn-new" class="btn-title"><span class="en-line">New Game</span>新的开始</button>
+      <button id="btn-continue" class="btn-title" disabled><span class="en-line">Continue</span>继续旅程</button>
+      <button id="btn-prototype" class="btn-title"><span class="en-line">Developer Shortcut · Week 2–3</span>测试入口：直接试玩第二、三周</button>
+      <button id="btn-title-settings" class="btn-title small"><span class="en-line">Settings</span>设置</button>
+    </nav>
+    <p id="save-preview" class="save-preview hidden"></p>
+    <p class="title-version">Prototype · Days 1–21 · Week 2–3 Playtest</p>
+  </div>
+</section>
+
+<!-- ============ GENDER SELECT ============ -->
+<section id="screen-gender" class="screen">
+  <div class="panel-page">
+    <header class="page-head">
+      <p class="en-line">Character</p>
+      <h2>你将以怎样的身份醒来</h2>
+      <p class="page-sub">Nait Rosier —— Rosier 家唯一继承人，第二性别固定为 Omega。性别与代词由你决定，并作为本存档的正式设定。</p>
+    </header>
+    <div class="gender-cards" id="gender-cards"></div>
+    <div class="portrait-row">
+      <img src="assets/char/nait.webp" alt="Nait Rosier" class="portrait-preview">
+    </div>
+  </div>
+</section>
+
+<!-- ============ GAME / STORY ============ -->
+<section id="screen-game" class="screen">
+  <div id="bg-layer-a" class="bg-layer"></div>
+  <div id="bg-layer-b" class="bg-layer"></div>
+  <div class="scene-veil"></div>
+
+  <header id="hud">
+    <div class="hud-left">
+      <span id="hud-day" class="hud-day"></span>
+      <span id="hud-loc" class="hud-loc"></span>
+    </div>
+    <nav class="hud-nav">
+      <button class="hud-btn" id="btn-talk"><span class="en-line">Talk</span>交谈</button>
+      <button class="hud-btn" id="btn-map"><span class="en-line">Map</span>地图</button>
+      <button class="hud-btn" id="btn-status"><span class="en-line">Status</span>状态</button>
+      <button class="hud-btn" id="btn-memory"><span class="en-line">Memory</span>记忆<span id="memory-dot" class="dot hidden"></span></button>
+      <button class="hud-btn" id="btn-menu"><span class="en-line">Menu</span>菜单</button>
+    </nav>
+  </header>
+
+  <div id="sprite-stage">
+    <img id="sprite-main" class="sprite" alt="" draggable="false">
+  </div>
+
+  <div id="dialogue-wrap">
+    <div id="nameplate" class="hidden">
+      <span id="speaker-en" class="en-line"></span>
+      <span id="speaker-cn"></span>
+    </div>
+    <div id="dialogue-box">
+      <p id="text-en" class="en-line"></p>
+      <p id="text-cn"></p>
+      <div id="continue-hint">▼</div>
+    </div>
+    <div id="choices" class="hidden"></div>
+    <div id="feedback-line" class="hidden"></div>
+  </div>
+</section>
+
+<!-- ============ DAY TRANSITION ============ -->
+<div id="day-card" class="hidden">
+  <p class="en-line" id="day-card-en"></p>
+  <p id="day-card-cn"></p>
+  <p id="day-flavor-en" class="en-line day-flavor"></p>
+  <p id="day-flavor-cn" class="day-flavor"></p>
+  <div class="title-rule"><i>❧</i></div>
+</div>
+
+<!-- ============ SCHEDULE OVERLAY ============ -->
+<div id="overlay-schedule" class="overlay hidden">
+  <div class="sheet">
+    <header class="page-head">
+      <p class="en-line" id="sched-time-en"></p>
+      <h2 id="sched-title">你想去哪里？</h2>
+    </header>
+    <div id="sched-options"></div>
+  </div>
+</div>
+
+<!-- ============ WORLD MAP OVERLAY ============ -->
+<div id="overlay-map" class="overlay hidden">
+  <div class="sheet">
+    <button class="sheet-close floating-close" data-close="overlay-map" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line">World Map</p>
+      <h2>地图</h2>
+</header>
+    <div id="map-body"></div>
+  </div>
+</div>
+
+<!-- ============ STATUS OVERLAY ============ -->
+<div id="overlay-status" class="overlay hidden">
+  <div class="sheet">
+    <button class="sheet-close floating-close" data-close="overlay-status" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line">Status</p>
+      <h2>当前状态</h2>
+</header>
+    <div id="status-body"></div>
+  </div>
+</div>
+
+<!-- ============ MEMORY OVERLAY ============ -->
+<div id="overlay-memory" class="overlay hidden">
+  <div class="sheet">
+    <button class="sheet-close floating-close" data-close="overlay-memory" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line">Memory Fragments</p>
+      <h2>记忆碎片</h2>
+</header>
+    <div id="memory-body"></div>
+  </div>
+</div>
+
+<!-- ============ MENU OVERLAY ============ -->
+<div id="overlay-menu" class="overlay hidden">
+  <div class="sheet narrow">
+    <button class="sheet-close floating-close" data-close="overlay-menu" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line">Menu</p>
+      <h2>菜单</h2>
+</header>
+    <div class="menu-list">
+      <button class="btn-block" id="btn-save"><span class="en-line">Save</span>保存进度</button>
+      <button class="btn-block" id="btn-load"><span class="en-line">Load</span>读取进度</button>
+      <button class="btn-block" id="btn-codex"><span class="en-line">Codex</span>世界观图鉴</button>
+      <button class="btn-block" id="btn-menu-settings"><span class="en-line">Settings</span>设置</button>
+      <button class="btn-block" id="btn-to-title"><span class="en-line">Title</span>回到标题</button>
+    </div>
+    <p id="save-toast" class="save-toast hidden">进度已保存 · Progress saved</p>
+  </div>
+</div>
+
+<!-- ============ SETTINGS OVERLAY ============ -->
+<div id="overlay-settings" class="overlay hidden">
+  <div class="sheet narrow">
+    <button class="sheet-close floating-close" data-close="overlay-settings" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line">Settings</p>
+      <h2>设置</h2>
+</header>
+    <div class="settings-list">
+      <label class="setting-row">
+        <span><span class="en-line">English Subtitles</span>显示英文台词</span>
+        <input type="checkbox" id="set-en" checked>
+      </label>
+      <label class="setting-row">
+        <span><span class="en-line">Reduced Motion</span>减少动态效果</span>
+        <input type="checkbox" id="set-motion">
+      </label>
+
+      <div class="ai-section">
+        <h3><span class="en-line">AI Dialogue</span>AI 对话层</h3>
+        <p class="ai-note">可选增强：接入你自己的大模型（OpenAI 兼容接口），角色即会以即兴台词回应。没有 Key 时游戏照常完整游玩，所有内容均有剧本原文。<br><span class="en-line" style="text-transform:none;letter-spacing:.03em">Optional. Bring your own key. Without one, the game runs fully on authored text.</span></p>
+        <label class="setting-row">
+          <span><span class="en-line">Enable AI</span>启用 AI 对话</span>
+          <input type="checkbox" id="ai-enabled">
+        </label>
+        <label class="ai-field"><span class="en-line">Endpoint</span>
+          <input type="text" id="ai-endpoint" placeholder="https://api.moonshot.cn/v1" autocomplete="off"></label>
+        <label class="ai-field"><span class="en-line">API Key</span>
+          <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off"></label>
+        <p class="ai-note ai-privacy-note">默认只在当前浏览器会话中保存 Key；关闭标签页/浏览器后不应依赖它继续存在。只有主动开启下方选项才会持久保存。调试日志永不包含原始 Key。<br><span class="en-line" style="text-transform:none">By default, the key is session-only. Persistent storage is opt-in. Debug exports never include the raw key.</span></p>
+        <label class="setting-row">
+          <span><span class="en-line">Remember API Key</span>在此浏览器持续保存 API Key</span>
+          <input type="checkbox" id="ai-remember-key">
+        </label>
+        <label class="ai-field"><span class="en-line">Model</span>
+          <input type="text" id="ai-model" placeholder="kimi-k3" autocomplete="off"></label>
+        <p class="ai-note" style="margin-top:-6px">Kimi 官方当前示例模型：<strong>kimi-k3</strong>。旧版 <code>kimi-k2-0905-preview</code> 会自动迁移。<br><span class="en-line" style="text-transform:none">Current Kimi API example model: kimi-k3.</span></p>
+        <label class="setting-row">
+          <span><span class="en-line">Free Chat</span>自由交谈（菜单「交谈」）</span>
+          <input type="checkbox" id="ai-freechat" checked>
+        </label>
+        <label class="setting-row">
+          <span><span class="en-line">Choice Reactions</span>选项后角色反应</span>
+          <input type="checkbox" id="ai-react" checked>
+        </label>
+        <label class="setting-row">
+          <span><span class="en-line">Ambient Flavor</span>每日氛围随笔</span>
+          <input type="checkbox" id="ai-flavor" checked>
+        </label>
+        <div class="ai-test-row">
+          <button class="btn-block" id="ai-test"><span class="en-line">Test Connection</span>测试连接</button>
+          <span id="ai-test-status"></span>
+        </div>
+        <label class="setting-row">
+          <span><span class="en-line">Include prompt snippets in debug log</span>调试日志包含少量对话片段</span>
+          <input type="checkbox" id="ai-debug-text">
+        </label>
+        <p class="ai-note" style="margin-top:-8px">默认关闭；关闭时导出的调试日志会把输入片段记为 [redacted]。<br><span class="en-line" style="text-transform:none">Off by default. Exported input snippets are redacted unless you opt in.</span></p>
+        <div class="ai-test-row">
+          <button class="btn-block" id="ai-preview-debug"><span class="en-line">Preview Debug Log</span>预览调试日志</button>
+          <button class="btn-block" id="ai-export"><span class="en-line">Export Debug Log</span>导出调试日志</button>
+          <button class="btn-block" id="ai-forget-key"><span class="en-line">Forget API Key</span>清除 API Key</button>
+          <span id="ai-state"></span>
+        </div>
+        <pre id="ai-debug-preview" class="ai-debug-preview hidden"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TALK OVERLAY (AI free chat) ============ -->
+<div id="overlay-talk" class="overlay hidden">
+  <div class="sheet talk-sheet">
+    <button class="sheet-close floating-close" data-close="overlay-talk" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line">Conversation</p>
+      <h2>找人聊聊</h2>
+</header>
+    <div id="talk-picker"></div>
+    <div id="talk-panel" class="hidden">
+      <div class="talk-head">
+        <img id="talk-avatar" alt="" draggable="false">
+        <div class="talk-who">
+          <div id="talk-name"><span class="en-line"></span><span class="cn"></span></div>
+          <div class="talk-note">即兴对话 · 不影响剧情与数值 · <span class="en-line" style="text-transform:none;letter-spacing:.03em">non-canonical flavor</span></div>
+        </div>
+        <button id="talk-back" class="talk-back"><span class="en-line">Back</span>换人</button>
+      </div>
+      <div id="talk-log"></div>
+      <div class="talk-input-row">
+        <input id="talk-input" placeholder="说点什么……（中文或 English）" autocomplete="off" maxlength="200">
+        <button id="talk-send"><span class="en-line">Send</span>送出</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SAVE SLOTS OVERLAY ============ -->
+<div id="overlay-saves" class="overlay hidden">
+  <div class="sheet narrow">
+    <button class="sheet-close floating-close" data-close="overlay-saves" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line" id="saves-title-en">Save</p>
+      <h2 id="saves-title">保存进度</h2>
+</header>
+    <div id="saves-body"></div>
+  </div>
+</div>
+
+<!-- ============ CODEX (LORE) OVERLAY ============ -->
+<div id="overlay-codex" class="overlay hidden">
+  <div class="sheet">
+    <button class="sheet-close floating-close" data-close="overlay-codex" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line">Codex</p>
+      <h2>世界观图鉴</h2>
+</header>
+    <div id="codex-body"></div>
+  </div>
+</div>
+
+<!-- ============ ENDING ============ -->
+<section id="screen-ending" class="screen">
+  <div class="ending-bg"></div>
+  <div class="title-veil"></div>
+  <div class="ending-content" id="ending-body"></div>
+</section>
+
+<div id="toast" class="hidden"></div>
+
+<script src="js/data.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>

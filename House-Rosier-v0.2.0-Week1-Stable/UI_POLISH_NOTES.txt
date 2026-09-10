@@ -1,0 +1,7 @@
+House Rosier — Floating Modal Close UI Polish
+
+- Map / Status / Memory / Menu / Settings / Talk / Save-Load / Codex close buttons are now persistent semi-transparent floating controls at the upper-right.
+- The close control remains reachable while long modal content scrolls.
+- Mobile uses safe-area-aware positioning and a >=40px touch target.
+- Schedule choice overlay intentionally remains non-dismissible: closing it would leave the main story flow paused with no reliable way to reopen the mandatory choice.
+- No story/state/AI logic changed in this patch.

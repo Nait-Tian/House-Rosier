@@ -1,0 +1,40 @@
+House Rosier — Round 2 P0 Reliability Pass
+
+Basis: Rosecourt Manor — Round 2 Playtest / Regression Feedback (2026-09-10)
+
+P0 fixes in this build:
+1. Week 2–3 developer shortcut now uses an explicit, non-canonical balanced Week-1 preset.
+   - Does not fabricate mutually-exclusive Week-1 choice flags.
+   - Carries only minimum established acquaintance/relationship state needed for Day 8 testing.
+   - Marks the state with prototype_jump / prototype_week1_balanced.
+   - UI labels the entry as a Developer Shortcut.
+
+2. Save/checkpoint integrity around schedules and scene boundaries.
+   - Schedule checkpoints clear stale scene/node pointers before autosave.
+   - A location/route choice commits effects before entering its scene.
+   - Ending a scene advances flow atomically and clears stale scene/node pointers.
+   - Day-end checkpoints save the advanced flow position.
+   - Prevents Continue/Load from resurrecting the previous scene after a schedule/day transition.
+
+3. Save schema compatibility.
+   - Current payload schema: v4.
+   - v1–v3 saves are normalized/migrated where structurally valid.
+   - Invalid future/corrupt saves are rejected with a clear message instead of silently loading corrupted state.
+   - Invalid exact scene/node pointers fall back to the flow checkpoint.
+
+4. Legacy gender migration.
+   - Old saves with no valid gender do not silently default Nait to male.
+   - Loading such a save opens the existing gender/pronoun picker once, preserves story progress, and upgrades the stored payload.
+   - Current gender is the single source for addressing/pronouns after migration.
+
+Static checks performed:
+- node --check js/game.js
+- node --check js/data.js
+- node --check js/ai.js
+
+Recommended manual regression after deployment:
+- Week 2–3 shortcut → all three gender choices → Day 8.
+- Save at a schedule → choose A → reload → choose B.
+- Save at end of scene/day → Continue should start at the next intended checkpoint.
+- Load a pre-selectable-gender save → choose gender → Continue/save/load again.
+- Try malformed/unsupported save data in localStorage: game should reject rather than corrupt progression.
