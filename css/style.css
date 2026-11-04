@@ -167,12 +167,12 @@ body.hide-en .en-line{display:none}
 /* sprite */
 #sprite-stage{
   position:absolute;left:0;right:0;bottom:0;top:0;z-index:5;
-  display:flex;align-items:flex-end;justify-content:center;pointer-events:none;
+  display:flex;align-items:flex-end;justify-content:center;pointer-events:none;overflow:hidden;
 }
 .sprite{
   --spr-scale:1;--spr-x:0px;--spr-y:0px;
-  height:min(88vh,900px);max-width:92vw;object-fit:contain;
-  margin-bottom:-3.5vh; /* larger full-body sprites: keep faces higher while feet tuck behind dialogue */
+  height:min(72vh,760px);max-width:none;object-fit:contain;
+  margin-bottom:-2.5vh; /* half-body framing: prioritize faces and upper-body gestures */
   transform-origin:center bottom;
   filter:drop-shadow(0 12px 28px rgba(0,0,0,.45));
   opacity:0;transform:translate(var(--spr-x),calc(14px + var(--spr-y))) scale(var(--spr-scale));
@@ -253,8 +253,10 @@ body.reduce-motion #continue-hint{animation:none}
   background:rgba(23,19,15,.55);backdrop-filter:blur(2px);
 }
 @media(min-width:720px){.overlay{align-items:center}}
+body.overlay-open{overflow:hidden;touch-action:none;}
+@supports (overflow: clip){body.overlay-open{overflow:clip;}}
 .sheet{
-  position:relative;width:min(720px,100%);max-height:88vh;overflow-y:auto;
+  position:relative;width:min(720px,100%);max-height:88vh;overflow-y:auto;scroll-padding-top:88px;
   background:var(--ivory);border:1px solid #c9b98f;
   padding:34px 30px 44px;
   animation:sheetIn .5s var(--ease);
@@ -975,13 +977,14 @@ body.reduce-motion .fb-pending{animation:none;opacity:.6}
 
   #sprite-stage{align-items:flex-end}
   .sprite{
-    height:min(72dvh,760px);
-    max-width:112vw;
-    margin-bottom:clamp(-16px,-1.6vh,-8px);
+    height:min(70dvh,720px);
+    max-width:none;
+    margin-bottom:clamp(-18px,-2.2vh,-10px);
   }
 
   #dialogue-wrap{
-    padding:0 10px calc(10px + env(safe-area-inset-bottom));
+    bottom:0;
+    padding:0 10px max(12px,env(safe-area-inset-bottom));
   }
   #nameplate{
     margin-left:12px;
@@ -1057,7 +1060,7 @@ body.reduce-motion .fb-pending{animation:none;opacity:.6}
   }
   #talk-input{min-width:0;font-size:16px} /* avoids iOS zoom */
   #talk-send{min-width:68px;min-height:44px;padding:9px 12px}
-  .page-head{position:sticky;top:0;z-index:3;background:var(--ivory)}
+  .page-head{position:sticky;top:0;z-index:3;background:linear-gradient(180deg, rgba(249,244,232,.985) 0%, rgba(249,244,232,.985) 82%, rgba(249,244,232,.94) 100%);padding-top:10px;padding-bottom:12px;margin-bottom:18px;box-shadow:0 10px 16px -14px rgba(45,35,26,.35)}
 }
 
 @media(max-width:430px){
@@ -1114,14 +1117,14 @@ body.reduce-motion .fb-pending{animation:none;opacity:.6}
   z-index:80;
   width:42px;
   height:42px;
-  margin:0 0 -42px auto;
+  margin:0 0 -30px auto;
   padding:0;
   display:flex;
   align-items:center;
   justify-content:center;
   border:1px solid rgba(235,218,183,.62);
   border-radius:999px;
-  background:rgba(46,37,31,.48);
+  background:rgba(46,37,31,.72);
   color:rgba(255,250,241,.96);
   font-size:22px;
   line-height:1;
@@ -1153,7 +1156,7 @@ body.reduce-motion .fb-pending{animation:none;opacity:.6}
     width:42px;
     height:42px;
     margin-bottom:-42px;
-    background:rgba(46,37,31,.56);
+    background:rgba(46,37,31,.78);
   }
   .sheet > .floating-close + .page-head{padding-left:42px;padding-right:42px}
 }
@@ -1162,4 +1165,1225 @@ body.reduce-motion .fb-pending{animation:none;opacity:.6}
   .sheet > .floating-close{
     width:40px;height:40px;left:calc(100% - 45px);font-size:20px;margin-bottom:-40px;
   }
+}
+
+
+/* ============ v0.2.4 MOBILE READABILITY: integrated choices + non-blocking toast ============ */
+/* Choices now live inside the parchment dialogue card. This keeps player replies
+   above the browser chrome and visually connects prompt + response. */
+#dialogue-box:has(#choices:not(.hidden)){
+  cursor:default;
+}
+#dialogue-box #choices{
+  width:100%;
+  margin:14px 0 0;
+  padding:10px 0 0;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  border-top:1px solid rgba(176,141,87,.35);
+  max-height:none;
+  overflow:visible;
+}
+#dialogue-box #choices.hidden{display:none !important}
+#dialogue-box .choice-btn{
+  width:100%;
+  min-height:48px;
+  margin:0;
+  padding:11px 16px;
+  border:1px solid rgba(176,141,87,.46);
+  border-radius:12px;
+  background:rgba(255,252,245,.52);
+  box-shadow:none;
+  color:var(--ink);
+  text-align:center;
+}
+#dialogue-box .choice-btn::before{
+  inset:4px;
+  border-radius:8px;
+  opacity:.55;
+}
+#dialogue-box .choice-btn:hover,
+#dialogue-box .choice-btn:focus-visible{
+  transform:none;
+  background:rgba(255,250,238,.88);
+  border-color:var(--gold);
+}
+
+/* System notifications no longer sit over the reading area. They appear below
+   the HUD, use a compact banner shape, and never capture taps. */
+#toast{
+  left:50%;
+  right:auto;
+  top:118px;
+  bottom:auto;
+  width:min(520px,calc(100vw - 28px));
+  transform:translateX(-50%);
+  padding:8px 16px;
+  border-radius:12px;
+  text-align:center;
+  line-height:1.45;
+  letter-spacing:.045em;
+  pointer-events:none;
+  background:rgba(23,19,15,.88);
+  backdrop-filter:blur(5px);
+  -webkit-backdrop-filter:blur(5px);
+  box-shadow:0 8px 22px rgba(0,0,0,.24);
+}
+
+@media(max-width:640px){
+  #dialogue-box:has(#choices:not(.hidden)){
+    max-height:48dvh;
+    padding-bottom:14px;
+  }
+  #dialogue-box #choices{
+    margin-top:10px;
+    padding-top:9px;
+    gap:6px;
+  }
+  #dialogue-box .choice-btn{
+    min-height:46px;
+    padding:10px 12px;
+    font-size:13px;
+    line-height:1.5;
+    touch-action:manipulation;
+  }
+  #dialogue-box .choice-btn .en-line{
+    font-size:9px;
+    line-height:1.3;
+    margin-bottom:2px;
+  }
+  #toast{
+    top:max(142px,calc(env(safe-area-inset-top) + 128px));
+    width:calc(100vw - 24px);
+    padding:8px 12px;
+    font-size:11.5px;
+  }
+}
+
+@media(max-width:390px){
+  #toast{
+    top:max(138px,calc(env(safe-area-inset-top) + 124px));
+    width:calc(100vw - 18px);
+    font-size:11px;
+  }
+}
+
+/* ============ IDENTITY CAROUSEL v0.2.7 ============ */
+.identity-page{
+  justify-content:flex-start;
+  min-height:100%;
+  padding-bottom:max(44px,calc(26px + env(safe-area-inset-bottom)));
+}
+.identity-head{margin-bottom:18px}
+.identity-head .page-sub{max-width:620px;margin-left:auto;margin-right:auto}
+.identity-carousel{
+  position:relative;
+  width:min(760px,100%);
+  height:340px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  touch-action:pan-y;
+  user-select:none;
+}
+.identity-track{position:relative;width:100%;height:100%}
+.identity-card{
+  position:absolute;
+  left:50%;top:50%;
+  width:220px;height:304px;
+  padding:0;
+  transform:translate(-50%,-50%) scale(.76);
+  opacity:.44;
+  border:1px solid rgba(181,158,116,.55);
+  border-radius:22px;
+  overflow:hidden;
+  background:linear-gradient(180deg,#f7f0e3,#ece0cb);
+  box-shadow:0 12px 34px -20px rgba(46,40,32,.4);
+  filter:grayscale(1) saturate(.35);
+  transition:transform .38s var(--ease),opacity .32s ease,filter .32s ease,border-color .32s ease,box-shadow .32s ease;
+  z-index:1;
+}
+.identity-card::after{
+  content:'';position:absolute;inset:8px;border:1px solid rgba(199,171,114,.28);border-radius:15px;pointer-events:none;
+}
+.identity-card img{
+  width:100%;height:100%;object-fit:cover;object-position:center 22%;display:block;
+  transition:filter .32s ease,transform .38s var(--ease);
+}
+.identity-card[data-pos="-1"]{transform:translate(calc(-50% - 238px),-50%) scale(.78)}
+.identity-card[data-pos="1"]{transform:translate(calc(-50% + 238px),-50%) scale(.78)}
+.identity-card[data-pos="0"]{
+  transform:translate(-50%,-50%) scale(1);
+  opacity:1;
+  filter:none;
+  z-index:3;
+  border-color:#b99a62;
+  box-shadow:0 17px 40px -19px rgba(77,55,34,.52),0 0 0 3px rgba(255,248,232,.75);
+}
+.identity-card[data-pos="0"] img{filter:none}
+.identity-card[data-pos="hidden"]{opacity:0;pointer-events:none}
+.identity-card-label{
+  position:absolute;left:14px;right:14px;bottom:14px;
+  padding:8px 10px 9px;
+  background:rgba(247,240,227,.9);
+  border:1px solid rgba(190,163,113,.55);
+  border-radius:13px;
+  color:var(--ink);
+  text-align:center;
+  backdrop-filter:blur(3px);
+}
+.identity-card-label strong{display:block;font-size:16px;letter-spacing:.14em;font-weight:600}
+.identity-card-label span{display:block;margin-top:2px;font-size:11px;color:var(--rose-deep);letter-spacing:.06em}
+.identity-arrow{
+  position:absolute;top:50%;transform:translateY(-50%);z-index:8;
+  width:44px;height:58px;border:0;background:transparent;color:var(--ink-soft);
+  font-family:serif;font-size:50px;line-height:1;opacity:.72;
+  transition:opacity .25s ease,transform .25s ease;
+}
+.identity-arrow:hover{opacity:1}
+.identity-arrow.prev{left:-4px}.identity-arrow.next{right:-4px}
+.identity-dots{display:flex;gap:9px;justify-content:center;margin-top:-4px;margin-bottom:18px}
+.identity-dot{width:7px;height:7px;border-radius:50%;background:#c9c0af;transition:transform .25s ease,background .25s ease}
+.identity-dot.on{background:var(--rose-deep);transform:scale(1.25)}
+.identity-copy{
+  width:min(620px,100%);
+  min-height:164px;
+  text-align:center;
+  padding:20px 28px 18px;
+  border:1px solid #d7c7a8;
+  border-radius:22px;
+  background:rgba(247,240,227,.66);
+  box-shadow:inset 0 0 0 7px rgba(255,255,255,.22);
+}
+.identity-copy .en-line{color:var(--rose);font-size:10px;letter-spacing:.16em}
+.identity-copy h3{font-size:23px;letter-spacing:.18em;margin:5px 0 9px;color:var(--ink)}
+.identity-copy p{font-size:13.5px;line-height:1.8;color:var(--ink-soft)}
+.identity-copy .identity-address{margin-top:10px;color:var(--rose-deep);font-size:13px;letter-spacing:.06em}
+.identity-confirm-btn{
+  margin-top:20px;min-width:280px;padding:12px 36px 13px;
+  border:1px solid #9b6a5d;border-radius:999px;
+  background:linear-gradient(180deg,#914f52,#743f43);
+  color:#fff7ed;letter-spacing:.16em;font-size:15px;
+  box-shadow:0 9px 24px -14px rgba(79,33,35,.7),inset 0 0 0 3px rgba(255,235,214,.13);
+}
+.identity-confirm-btn .en-line{font-size:9px;letter-spacing:.24em;color:#ead9c8;margin-bottom:1px}
+.identity-modal{
+  position:fixed;inset:0;z-index:120;
+  display:flex;align-items:center;justify-content:center;padding:24px;
+  background:rgba(24,19,16,.48);backdrop-filter:blur(5px);
+}
+.identity-modal-card{
+  position:relative;width:min(430px,92vw);padding:34px 28px 26px;text-align:center;
+  border:1px solid #c7ad7f;border-radius:24px;
+  background:linear-gradient(180deg,#fbf6ec,#f1e6d1);
+  box-shadow:0 28px 70px rgba(0,0,0,.28),inset 0 0 0 7px rgba(255,255,255,.35);
+}
+.identity-modal-card::before{content:'';position:absolute;inset:10px;border:1px solid rgba(183,150,92,.35);border-radius:16px;pointer-events:none}
+.identity-modal-card>.en-line{font-size:10px;color:var(--rose);letter-spacing:.18em}
+.identity-modal-card h3{font-size:25px;letter-spacing:.16em;margin:5px 0 18px}
+.identity-modal-card p{font-size:15px;line-height:1.9;color:var(--ink-soft)}
+.identity-modal-card strong{color:var(--rose-deep);font-weight:600}
+.identity-modal-close{position:absolute;right:18px;top:13px;border:0;background:transparent;color:var(--ink-soft);font-size:27px;z-index:2}
+.identity-modal-actions{display:flex;gap:12px;margin-top:24px;justify-content:center}
+.identity-modal-actions button{flex:1;min-height:46px;border-radius:14px;font-size:14px;letter-spacing:.08em}
+.identity-modal-secondary{border:1px solid #cfbea0;background:#f7efe1;color:var(--ink)}
+.identity-modal-primary{border:1px solid #91595a;background:linear-gradient(180deg,#914f52,#743f43);color:#fff8ee}
+
+@media(max-width:640px){
+  .identity-page{padding:31px 14px max(34px,calc(20px + env(safe-area-inset-bottom)))}
+  .identity-head{margin-bottom:8px}
+  .identity-head h2{font-size:clamp(26px,8vw,34px)}
+  .identity-head .page-sub{font-size:13px;line-height:1.72;margin-top:9px}
+  .identity-carousel{height:285px;width:100%;overflow:hidden}
+  .identity-card{width:168px;height:238px;border-radius:18px}
+  .identity-card[data-pos="-1"]{transform:translate(calc(-50% - 146px),-50%) scale(.72)}
+  .identity-card[data-pos="1"]{transform:translate(calc(-50% + 146px),-50%) scale(.72)}
+  .identity-card[data-pos="0"]{transform:translate(-50%,-50%) scale(1)}
+  .identity-card-label{left:8px;right:8px;bottom:8px;padding:6px 6px 7px}
+  .identity-card-label strong{font-size:14px}.identity-card-label span{font-size:9.5px}
+  .identity-arrow{width:34px;height:50px;font-size:42px}
+  .identity-arrow.prev{left:-3px}.identity-arrow.next{right:-3px}
+  .identity-dots{margin-top:-6px;margin-bottom:13px}
+  .identity-copy{min-height:144px;padding:16px 18px 14px;border-radius:18px}
+  .identity-copy h3{font-size:20px;margin:3px 0 7px}
+  .identity-copy p{font-size:12.5px;line-height:1.7}
+  .identity-copy .identity-address{margin-top:7px;font-size:12px}
+  .identity-confirm-btn{margin-top:15px;min-width:min(270px,82vw);padding:11px 28px 12px}
+  .identity-modal{align-items:flex-end;padding:14px 12px calc(18px + env(safe-area-inset-bottom))}
+  .identity-modal-card{width:100%;padding:31px 20px 22px;border-radius:24px}
+  .identity-modal-actions{gap:9px}.identity-modal-actions button{min-height:48px}
+}
+  .week-summary-sheet{border-radius:20px;padding:24px 18px 22px;margin-top:8px;margin-bottom:8px}\n  .week-summary-head{margin-bottom:14px}\n  .week-summary-section{padding:14px 0}\n  .week-summary-section h3{font-size:18px}\n  .week-summary-section p{font-size:13px;line-height:1.75}\n  .week-summary-item{font-size:13px;padding:10px 11px}\n}\n
+
+/* ============ v0.3.1 POST-CHOICE FEEDBACK AS SECONDARY NARRATION ============ */
+/* Keep reactions inside the parchment card, but present them as quiet narrative
+   aftertext rather than a pill/button-like UI element. */
+#dialogue-box #feedback-line{
+  width:auto;
+  margin:10px 8px 0;
+  padding:8px 0 0 14px;
+  color:rgba(92,76,61,.78);
+  font-size:13px;
+  letter-spacing:.025em;
+  font-style:italic;
+  line-height:1.7;
+  text-align:left;
+  background:transparent !important;
+  border:0 !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  position:relative;
+}
+#dialogue-box #feedback-line::before{
+  content:'❧';
+  position:absolute;
+  left:0;
+  top:7px;
+  color:rgba(160,124,73,.52);
+  font-size:11px;
+  font-style:normal;
+}
+#dialogue-box #feedback-line .en-line{
+  display:block;
+  margin-bottom:2px;
+  color:rgba(124,103,80,.56);
+  font-size:10.5px;
+  letter-spacing:.04em;
+  font-style:italic;
+}
+#dialogue-box #feedback-line.hidden{display:none !important}
+
+@media(max-width:640px){
+  #dialogue-box #feedback-line{
+    margin:8px 5px 0;
+    padding:7px 0 0 13px;
+    font-size:12.5px;
+    line-height:1.6;
+  }
+  #dialogue-box #feedback-line::before{top:6px;font-size:10px}
+  #dialogue-box:has(#feedback-line:not(.hidden)){
+    max-height:48dvh;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+}
+
+
+/* ============ v0.3.2 FEEDBACK: INLINE AFTERTEXT, NO CAPSULE ============ */
+/* Deliberately overrides legacy #feedback-line decoration rules. */
+#dialogue-box #feedback-line,
+#feedback-line{
+  display:block;
+  width:auto !important;
+  min-height:0 !important;
+  margin:10px 4px 0 !important;
+  padding:9px 2px 0 !important;
+  color:rgba(92,76,61,.72) !important;
+  font-size:12.5px !important;
+  letter-spacing:.02em !important;
+  font-style:italic !important;
+  line-height:1.65 !important;
+  text-align:left !important;
+  background:none !important;
+  border:0 !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  overflow:visible !important;
+}
+#dialogue-box #feedback-line::before,
+#feedback-line::before{
+  content:'' !important;
+  display:block !important;
+  position:static !important;
+  inset:auto !important;
+  width:44px !important;
+  height:1px !important;
+  margin:0 0 8px !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:rgba(176,141,87,.38) !important;
+}
+#dialogue-box #feedback-line .en-line,
+#feedback-line .en-line{
+  display:none !important;
+}
+#feedback-line.hidden{display:none !important;}
+@media(max-width:640px){
+  #dialogue-box #feedback-line,#feedback-line{
+    margin:8px 2px 0 !important;
+    padding-top:8px !important;
+    font-size:12px !important;
+  }
+}
+
+
+/* ============ v0.3.5 SETTINGS WIDTH / NO HORIZONTAL SCROLL ============ */
+#overlay-settings .sheet{
+  overflow-x:hidden;
+  box-sizing:border-box;
+}
+#overlay-settings .settings-list,
+#overlay-settings .ai-section,
+#overlay-settings .setting-row,
+#overlay-settings .ai-field,
+#overlay-settings .ai-test-row{
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+}
+#overlay-settings .setting-row > span{
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+#overlay-settings .setting-row input[type="checkbox"]{
+  flex:0 0 20px;
+}
+#overlay-settings .ai-field input{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+}
+#overlay-settings .ai-note,
+#overlay-settings #ai-test-status,
+#overlay-settings #ai-state,
+#overlay-settings code{
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+#overlay-settings .ai-test-row{
+  flex-wrap:wrap;
+  align-items:stretch;
+  gap:10px;
+}
+#overlay-settings .ai-test-row .btn-block{
+  flex:1 1 132px;
+  min-width:0;
+  max-width:100%;
+  white-space:normal;
+  line-height:1.45;
+  text-align:center;
+}
+#overlay-settings #ai-test-status,
+#overlay-settings #ai-state{
+  flex:1 0 100%;
+  width:100%;
+  min-width:0;
+}
+#overlay-settings .ai-debug-preview{
+  max-width:100%;
+  overflow-x:auto;
+  box-sizing:border-box;
+}
+@media(max-width:520px){
+  #overlay-settings .ai-test-row .btn-block{flex-basis:100%}
+}
+
+
+/* ============================================================
+   v0.3.6 — unified scroll occlusion / sticky modal headers
+   All vertically scrollable sheets keep a fully opaque header shield,
+   so content never visibly slides underneath the title or close control.
+   ============================================================ */
+
+/* Sheet headers: desktop + mobile, full content-width occlusion. */
+.sheet > .page-head{
+  position:sticky;
+  top:0;
+  z-index:30;
+  max-width:none;
+  width:auto;
+  margin:-2px -2px 18px;
+  padding:12px 52px 14px;
+  background:linear-gradient(180deg,
+    rgba(249,244,232,1) 0%,
+    rgba(249,244,232,1) 84%,
+    rgba(249,244,232,.985) 100%);
+  border-bottom:1px solid rgba(176,141,87,.18);
+  box-shadow:0 12px 16px -16px rgba(45,35,26,.52);
+}
+.sheet > .floating-close{
+  z-index:90;
+}
+
+/* The identity-selection page itself can scroll on short phones. */
+.identity-page > .identity-head{
+  position:sticky;
+  top:0;
+  z-index:24;
+  width:calc(100% + 48px);
+  max-width:none;
+  margin:-48px -24px 24px;
+  padding:48px 24px 16px;
+  background:linear-gradient(180deg,
+    rgba(249,244,232,1) 0%,
+    rgba(249,244,232,1) 88%,
+    rgba(249,244,232,.985) 100%);
+  border-bottom:1px solid rgba(176,141,87,.16);
+  box-shadow:0 12px 18px -18px rgba(45,35,26,.45);
+}
+
+/* Week summary now scrolls inside its own sheet rather than the backdrop. */
+.week-summary-overlay{
+  overflow:hidden;
+}
+.week-summary-sheet{
+  max-height:calc(100dvh - max(36px, env(safe-area-inset-top)) - max(36px, env(safe-area-inset-bottom)));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+.week-summary-head{
+  position:relative;
+  margin:0 0 22px;
+  padding:0;
+  background:transparent;
+  border-bottom:0;
+  box-shadow:none;
+}
+
+@media(max-width:640px){
+  .sheet > .page-head{
+    margin:-2px -2px 16px;
+    padding:12px 44px 13px;
+  }
+  .identity-page > .identity-head{
+    width:calc(100% + 48px);
+    margin:-48px -24px 20px;
+    padding:calc(42px + env(safe-area-inset-top)) 20px 14px;
+  }
+  .week-summary-sheet{
+    max-height:calc(100dvh - max(20px, env(safe-area-inset-top)) - max(20px, env(safe-area-inset-bottom)));
+  }
+  .week-summary-head{
+    margin:0 0 14px;
+    padding:0;
+  }
+}
+
+@media(max-width:360px){
+  .sheet > .page-head{padding-left:40px;padding-right:40px}
+}
+
+
+/* ============================================================
+   v0.4.0 WEEK 1 STABLE — usability / accessibility polish
+   ============================================================ */
+body.story-transition #dialogue-box,
+body.story-transition #choices,
+body.story-transition #hud{
+  pointer-events:none !important;
+}
+body.story-transition #dialogue-box{cursor:wait;}
+
+/* Save/load rows use actual buttons so keyboard and assistive tech can reach them. */
+.slot-row{
+  padding:0;
+  gap:0;
+  align-items:stretch;
+  overflow:hidden;
+}
+.slot-main{
+  appearance:none;
+  -webkit-appearance:none;
+  flex:1;
+  min-width:0;
+  border:0;
+  background:transparent;
+  color:inherit;
+  text-align:left;
+  font:inherit;
+  padding:14px 16px;
+  cursor:default;
+}
+.slot-main.act{cursor:pointer;}
+.slot-main.act:hover{background:#f7f1e2;}
+.slot-main:focus-visible,
+.slot-del:focus-visible{
+  outline:2px solid var(--gold);
+  outline-offset:-3px;
+}
+.slot-main:disabled{opacity:1;color:inherit;}
+.slot-info{display:block;}
+.slot-name,.slot-desc{display:block;}
+.slot-row:has(.slot-main.act):hover{border-color:var(--gold);transform:translateX(4px);}
+.slot-row .slot-del{
+  align-self:stretch;
+  width:42px;
+  height:auto;
+  min-height:54px;
+  border-width:0 0 0 1px;
+  background:rgba(255,255,255,.18);
+}
+@supports not selector(:has(*)){
+  .slot-row{transition:border-color .3s var(--ease),background .3s var(--ease);}
+}
+
+/* Keep optional AI tooling compact in the main settings page. */
+.ai-state-line{
+  margin:8px 0 12px;
+  font-size:12.5px;
+  line-height:1.7;
+  color:var(--ink-soft);
+  overflow-wrap:anywhere;
+}
+.ai-state-line.ok{color:#48644f;}
+.ai-state-line.bad{color:#914a47;}
+.ai-advanced{
+  margin-top:12px;
+  border:1px solid #d8cbb0;
+  background:rgba(255,255,255,.22);
+}
+.ai-advanced > summary{
+  list-style:none;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  min-height:48px;
+  padding:10px 14px;
+  color:var(--ink);
+  font-size:13.5px;
+  letter-spacing:.06em;
+}
+.ai-advanced > summary::-webkit-details-marker{display:none;}
+.ai-advanced > summary:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;}
+.ai-advanced > summary .en-line{font-size:9.5px;color:var(--rose);margin-bottom:2px;}
+.ai-advanced-mark{font-size:18px;color:var(--rose-deep);transition:transform .2s ease;}
+.ai-advanced[open] .ai-advanced-mark{transform:rotate(180deg);}
+.ai-advanced-body{
+  border-top:1px solid #d8cbb0;
+  padding:16px 14px 4px;
+  min-width:0;
+  overflow-x:hidden;
+}
+@media(max-width:640px){
+  .slot-row:has(.slot-main.act):hover{transform:none;}
+  .ai-advanced > summary{padding:11px 12px;}
+  .ai-advanced-body{padding:14px 12px 2px;}
+}
+
+
+/* ============================================================
+   v0.4.1 — identity screen mobile polish
+   The generic Mucha page-head ornament looked like a stray selector ring
+   when it overlapped the portrait carousel. Identity selection uses a clean
+   header instead, and does not need a sticky occlusion shield.
+   ============================================================ */
+.identity-page > .identity-head::before,
+.identity-page > .identity-head::after{display:none;}
+
+.identity-page > .identity-head{
+  position:relative;
+  top:auto;
+  z-index:auto;
+  width:100%;
+  max-width:640px;
+  margin:0 auto 18px;
+  padding:0;
+  background:transparent;
+  border-bottom:0;
+  box-shadow:none;
+}
+
+@media(max-width:640px){
+  .identity-page{
+    padding-top:max(22px, env(safe-area-inset-top));
+  }
+  .identity-page > .identity-head{
+    width:100%;
+    max-width:100%;
+    margin:0 auto 10px;
+    padding:0 4px;
+    background:transparent;
+    border:0;
+    box-shadow:none;
+  }
+}
+
+
+/* ============================================================
+   v0.4.2 — identity mobile spacing polish
+   Keep the Chinese title on one line, deliberately break the subtitle,
+   and pull the description panel closer to the portrait carousel.
+   ============================================================ */
+.identity-sub-break{display:none;}
+
+@media(max-width:640px){
+  .identity-page > .identity-head{margin-bottom:4px;}
+  .identity-head h2{
+    font-size:clamp(25px,7.1vw,30px);
+    letter-spacing:.08em;
+    white-space:nowrap;
+  }
+  .identity-head .page-sub{
+    font-size:12.8px;
+    line-height:1.68;
+    margin-top:7px;
+  }
+  .identity-sub-break{display:block;}
+  .identity-carousel{
+    height:270px;
+    margin-top:-2px;
+  }
+  .identity-dots{
+    margin-top:-13px;
+    margin-bottom:6px;
+  }
+  .identity-copy{
+    margin-top:0;
+    min-height:138px;
+    padding-top:14px;
+    padding-bottom:12px;
+  }
+  .identity-confirm-btn{margin-top:12px;}
+}
+
+@media(max-width:380px){
+  .identity-head h2{
+    font-size:24px;
+    letter-spacing:.06em;
+  }
+}
+
+
+/* ============ v0.4.6 WEEK SUMMARY BACKDROP ============ */
+.week-summary-overlay{
+  background:rgba(19,15,12,.76) !important;
+  -webkit-backdrop-filter:blur(4px);
+  backdrop-filter:blur(4px);
+}
+.week-summary-sheet{
+  position:relative;
+  isolation:isolate;
+  background:rgba(249,244,232,.96) !important;
+  background-color:rgba(249,244,232,.96) !important;
+  background-clip:padding-box;
+  border:1px solid rgba(176,141,87,.62) !important;
+  box-shadow:0 28px 72px rgba(0,0,0,.34), inset 0 0 0 7px rgba(255,255,255,.28) !important;
+}
+.week-summary-head,
+#week-summary-body,
+.week-summary-footer{
+  position:relative;
+  z-index:1;
+}
+
+
+/* ============ v0.4.7 WEEK SUMMARY REDESIGN ============ */
+.week-summary-overlay{
+  position:fixed;
+  inset:0;
+  z-index:125;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:max(16px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom));
+  background:rgba(20,15,12,.78) !important;
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+  overflow:hidden;
+}
+.week-summary-sheet{
+  width:min(760px, 100%);
+  max-height:min(86dvh, 920px);
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  background:linear-gradient(180deg, rgba(251,247,239,.985) 0%, rgba(247,240,228,.97) 100%) !important;
+  color:var(--ink);
+  border:1px solid rgba(182,149,97,.62) !important;
+  border-radius:28px;
+  box-shadow:0 26px 80px rgba(0,0,0,.34), inset 0 0 0 7px rgba(255,255,255,.34) !important;
+  padding:30px clamp(20px, 4.6vw, 42px) 26px;
+  position:relative;
+  isolation:isolate;
+}
+.week-summary-head{
+  text-align:center;
+  margin:0 0 18px;
+  padding:0 0 18px;
+  border-bottom:1px solid rgba(182,149,97,.24);
+}
+.week-summary-head > .en-line{
+  display:block;
+  margin:0 0 6px;
+  font-family:var(--en-display);
+  font-size:11px;
+  letter-spacing:.24em;
+  text-transform:uppercase;
+  color:var(--rose);
+}
+.week-summary-head h2{
+  margin:0;
+  font-size:clamp(27px, 4.2vw, 40px);
+  line-height:1.15;
+  letter-spacing:.06em;
+  font-weight:600;
+}
+.week-summary-head .title-rule{
+  width:min(320px, 80%);
+  margin:14px auto 0;
+  opacity:.9;
+}
+#week-summary-body{display:block;}
+.week-summary-section{
+  padding:16px 0 18px;
+  border-top:1px solid rgba(182,149,97,.18);
+}
+.week-summary-section:first-child{border-top:0; padding-top:2px;}
+.week-summary-kicker{
+  margin-bottom:5px;
+  font-family:var(--en-display);
+  font-size:10px;
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--gold);
+}
+.week-summary-section h3{
+  margin:0 0 10px;
+  font-size:21px;
+  line-height:1.25;
+  letter-spacing:.05em;
+  font-weight:600;
+}
+.week-summary-section p{
+  margin:0;
+  font-size:15px;
+  line-height:1.84;
+  color:var(--ink-soft);
+}
+.week-summary-section p + p{margin-top:6px;}
+.week-summary-list{
+  display:grid;
+  gap:10px;
+  margin-top:12px;
+}
+.week-summary-item{
+  padding:12px 14px;
+  border:1px solid rgba(182,149,97,.24);
+  border-radius:14px;
+  background:rgba(255,255,255,.44);
+  box-shadow:0 8px 18px rgba(97,77,47,.05);
+  font-size:14px;
+  line-height:1.7;
+  color:var(--ink-soft);
+}
+.week-summary-item strong{
+  color:var(--ink);
+  font-weight:600;
+}
+.week-summary-item .en-line{
+  display:block;
+  margin-top:3px;
+  font-size:10.5px;
+  line-height:1.45;
+  letter-spacing:.04em;
+  color:rgba(88,72,57,.66);
+}
+.week-summary-memory-count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin:2px 0 2px;
+  padding:5px 12px;
+  border-radius:999px;
+  background:rgba(164,117,91,.08);
+  border:1px solid rgba(176,141,87,.25);
+  font-family:var(--en-display);
+  font-size:11px;
+  letter-spacing:.18em;
+  color:var(--rose);
+}
+.week-summary-footer{
+  margin-top:2px;
+  padding-top:18px;
+  border-top:1px solid rgba(182,149,97,.24);
+  text-align:center;
+}
+.week-summary-footer p{
+  margin:0;
+  font-size:13px;
+  line-height:1.75;
+  color:var(--ink-soft);
+}
+.week-summary-footer .en-line{
+  margin-top:3px;
+  font-size:10.5px;
+  letter-spacing:.04em;
+  color:rgba(88,72,57,.66);
+}
+.week-summary-continue{
+  display:block;
+  width:min(430px, 100%);
+  margin:18px auto 0;
+}
+@media(max-width:640px){
+  .week-summary-overlay{
+    align-items:flex-start;
+    padding:12px 12px max(14px, env(safe-area-inset-bottom));
+  }
+  .week-summary-sheet{
+    width:100%;
+    max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
+    border-radius:22px;
+    padding:22px 16px 20px;
+    margin-top:6px;
+  }
+  .week-summary-head{margin-bottom:14px; padding-bottom:14px;}
+  .week-summary-head h2{font-size:clamp(24px, 8vw, 32px);}
+  .week-summary-head > .en-line{font-size:10px; letter-spacing:.2em;}
+  .week-summary-head .title-rule{margin-top:12px; width:min(270px, 82%);}
+  .week-summary-section{padding:14px 0 16px;}
+  .week-summary-section h3{font-size:18px; margin-bottom:8px;}
+  .week-summary-section p{font-size:13.5px; line-height:1.78;}
+  .week-summary-item{padding:11px 12px; font-size:13px; line-height:1.64;}
+  .week-summary-item .en-line{font-size:10px;}
+  .week-summary-memory-count{font-size:10.5px; letter-spacing:.14em;}
+  .week-summary-footer p{font-size:12.5px;}
+  .week-summary-continue{margin-top:16px;}
+}
+
+
+/* ============ v0.5.1 SUMMARY BUTTON + MOBILE CHOICE WRAP POLISH ============ */
+.week-summary-continue{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  min-height:108px;
+  padding:18px 28px;
+  text-align:center;
+}
+.week-summary-continue .cn-line{
+  display:block;
+  font-size:clamp(18px, 2.5vw, 24px);
+  line-height:1.18;
+  letter-spacing:.12em;
+}
+.week-summary-continue .en-line{
+  display:block;
+  margin:0;
+  font-size:clamp(12px, 1.8vw, 16px);
+  line-height:1.12;
+  letter-spacing:.26em;
+  text-transform:none;
+  color:#eadfc9;
+}
+#dialogue-box .choice-btn{
+  letter-spacing:.02em;
+}
+@media(max-width:640px){
+  .week-summary-continue{
+    min-height:96px;
+    padding:16px 20px;
+    gap:3px;
+  }
+  .week-summary-continue .cn-line{
+    font-size:18px;
+    letter-spacing:.1em;
+  }
+  .week-summary-continue .en-line{
+    font-size:11.5px;
+    letter-spacing:.18em;
+  }
+  #dialogue-box .choice-btn{
+    padding:10px 12px;
+    font-size:12.5px;
+    line-height:1.42;
+    letter-spacing:0;
+    word-break:keep-all;
+    overflow-wrap:normal;
+  }
+}
+
+
+/* ============ v0.5.9 WEEK1 SUMMARY VISUAL ROLLBACK / GLASS STYLE ============ */
+.week-summary-overlay{
+  background:linear-gradient(180deg, rgba(17,12,12,.42) 0%, rgba(18,13,12,.58) 100%) !important;
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+  padding:max(20px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom));
+}
+.week-summary-sheet{
+  width:min(760px, 100%);
+  max-height:min(90dvh, 980px);
+  overflow-y:auto;
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  border-radius:0 !important;
+  padding:24px 8px 32px !important;
+}
+.week-summary-head{
+  text-align:center;
+  margin:0 auto 18px;
+  padding:0;
+  border:0;
+  color:#f8efe1;
+}
+.week-summary-head > .en-line{
+  margin:0 0 10px;
+  font-family:var(--en-display);
+  font-size:12px;
+  line-height:1.2;
+  letter-spacing:.38em;
+  text-transform:uppercase;
+  color:rgba(219,193,136,.92);
+}
+.week-summary-head h2{
+  margin:0;
+  font-size:clamp(42px, 7vw, 72px);
+  line-height:1.06;
+  letter-spacing:.16em;
+  font-weight:400;
+  color:#fbf5eb;
+  text-shadow:0 2px 16px rgba(0,0,0,.2);
+}
+.week-summary-subtitle{
+  margin:10px 0 0;
+  font-size:14px;
+  line-height:1.5;
+  letter-spacing:.18em;
+  color:rgba(250,242,231,.84);
+}
+.week-summary-head .title-rule{
+  width:min(360px, 86%);
+  margin:14px auto 0;
+  color:rgba(221,194,139,.88);
+  opacity:1;
+}
+#week-summary-body{
+  display:grid;
+  gap:18px;
+}
+.week-summary-section{
+  border:1px solid rgba(207,176,127,.24) !important;
+  background:linear-gradient(180deg, rgba(56,39,38,.46) 0%, rgba(40,29,28,.52) 100%) !important;
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+  box-shadow:0 14px 38px rgba(0,0,0,.16);
+  border-radius:22px;
+  padding:20px 22px 22px;
+}
+.week-summary-section:first-child{padding-top:20px;}
+.week-summary-kicker{
+  margin:0 0 8px;
+  font-family:var(--en-display);
+  font-size:12px;
+  letter-spacing:.28em;
+  text-transform:uppercase;
+  color:rgba(219,193,136,.92);
+}
+.week-summary-section h3{
+  margin:0 0 12px;
+  font-size:22px;
+  line-height:1.22;
+  letter-spacing:.08em;
+  color:#fff8ef;
+}
+.week-summary-section p{
+  margin:0;
+  font-size:16px;
+  line-height:1.9;
+  color:rgba(252,245,236,.92);
+}
+.week-summary-section .en-line{
+  color:rgba(239,230,213,.74) !important;
+}
+.week-summary-list{
+  gap:14px;
+}
+.week-summary-item{
+  padding:16px 18px;
+  border-radius:18px;
+  background:rgba(255,255,255,.06) !important;
+  border:1px solid rgba(236,218,183,.12) !important;
+  box-shadow:none !important;
+  font-size:16px;
+  line-height:1.82;
+  color:rgba(250,243,233,.94) !important;
+}
+.week-summary-item strong{color:#ffffff;}
+.week-summary-item .en-line{
+  display:block;
+  margin-top:4px;
+  font-size:11px;
+  letter-spacing:.08em;
+  line-height:1.55;
+  color:rgba(236,226,207,.7) !important;
+}
+.week-summary-memory-count{
+  margin:2px 0 14px;
+  padding:7px 14px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08) !important;
+  border:1px solid rgba(222,196,146,.24) !important;
+  font-size:11px;
+  letter-spacing:.2em;
+  color:rgba(231,206,160,.96) !important;
+}
+.week-summary-footer{
+  margin-top:18px;
+  padding:0 6px 2px;
+  border:0;
+  text-align:center;
+}
+.week-summary-footer p{
+  margin:0;
+  font-size:16px;
+  line-height:1.9;
+  color:rgba(248,238,226,.9);
+  text-shadow:0 1px 12px rgba(0,0,0,.18);
+}
+.week-summary-footer .en-line{
+  margin-top:2px;
+  font-size:11px;
+  letter-spacing:.08em;
+  color:rgba(233,222,203,.72);
+}
+.week-summary-continue{
+  width:min(620px, 100%);
+  margin:18px auto 0;
+  min-height:104px;
+  border-radius:26px;
+  background:linear-gradient(180deg, rgba(76,63,59,.8) 0%, rgba(59,48,45,.88) 100%) !important;
+  border:1px solid rgba(224,198,149,.5) !important;
+  box-shadow:0 18px 44px rgba(0,0,0,.18), inset 0 0 0 2px rgba(244,232,209,.35) !important;
+}
+.week-summary-continue .cn-line{
+  color:#fff8eb;
+  font-size:clamp(20px, 2.8vw, 28px);
+  letter-spacing:.16em;
+}
+.week-summary-continue .en-line{
+  color:rgba(241,231,212,.92);
+  font-size:clamp(12px, 1.8vw, 16px);
+  letter-spacing:.22em;
+}
+@media(max-width:640px){
+  .week-summary-overlay{padding:max(14px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom));}
+  .week-summary-sheet{padding:14px 2px 22px !important;max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 18px);}
+  .week-summary-head{margin-bottom:16px;}
+  .week-summary-head>.en-line{font-size:10px;letter-spacing:.28em;margin-bottom:8px;}
+  .week-summary-head h2{font-size:clamp(34px, 12vw, 56px);letter-spacing:.1em;}
+  .week-summary-subtitle{font-size:12px;letter-spacing:.12em;margin-top:8px;}
+  .week-summary-head .title-rule{width:min(270px,84%);margin-top:11px;}
+  #week-summary-body{gap:14px;}
+  .week-summary-section{padding:16px 16px 18px;border-radius:18px;}
+  .week-summary-kicker{font-size:10.5px;letter-spacing:.24em;margin-bottom:6px;}
+  .week-summary-section h3{font-size:18px;margin-bottom:9px;}
+  .week-summary-section p{font-size:14px;line-height:1.82;}
+  .week-summary-item{padding:13px 14px;font-size:14px;line-height:1.74;border-radius:16px;}
+  .week-summary-item .en-line{font-size:10px;}
+  .week-summary-memory-count{font-size:10px;padding:6px 12px;margin-bottom:12px;}
+  .week-summary-footer{margin-top:14px;padding:0 2px 2px;}
+  .week-summary-footer p{font-size:14px;line-height:1.8;}
+  .week-summary-footer .en-line{font-size:10px;}
+  .week-summary-continue{min-height:92px;border-radius:22px;margin-top:16px;padding:15px 18px;}
+  .week-summary-continue .cn-line{font-size:18px;letter-spacing:.12em;}
+  .week-summary-continue .en-line{font-size:11px;letter-spacing:.16em;}
+}
+
+
+/* ============================================================
+   v0.6.0 — LOADING SCREEN + BACKLOG + HUD 6TH BUTTON
+   ============================================================ */
+
+/* ---------- loading screen: a chibi Nait races the progress bar ---------- */
+#screen-loading{
+  position:fixed;inset:0;z-index:200;
+  display:flex;align-items:center;justify-content:center;
+  background:
+    radial-gradient(ellipse at 50% 108%, rgba(169,104,116,.14), transparent 52%),
+    linear-gradient(180deg,#1c1712 0%,#241d16 100%);
+  color:var(--ivory);
+  opacity:1;visibility:visible;
+  transition:opacity .45s var(--ease), visibility 0s linear .45s;
+}
+#screen-loading.done{opacity:0;visibility:hidden}
+#screen-loading.hidden{display:none}
+.loading-inner{display:flex;flex-direction:column;align-items:center;padding:0 24px;width:min(520px,100%)}
+.loading-pretitle{
+  font-family:var(--en-display);font-size:12px;letter-spacing:.34em;text-indent:.34em;
+  text-transform:uppercase;color:var(--gold);margin-bottom:14px;
+}
+.loading-flavor{font-size:14.5px;letter-spacing:.14em;color:rgba(245,239,227,.82);margin-bottom:34px}
+.loading-track{position:relative;width:100%;height:96px}
+.loading-track-line{
+  position:absolute;left:0;right:0;bottom:22px;height:1px;
+  background:rgba(199,171,114,.32);
+}
+.loading-fill{
+  position:absolute;left:0;bottom:22px;height:2px;width:0%;
+  background:linear-gradient(90deg,var(--gold),var(--mucha-rose));
+  border-radius:2px;
+  box-shadow:0 0 10px rgba(176,141,87,.5);
+  transition:width .3s var(--ease);
+}
+.loading-chibi{
+  position:absolute;bottom:24px;left:0;width:88px;height:88px;object-fit:contain;
+  filter:drop-shadow(0 6px 10px rgba(0,0,0,.4));
+  transition:left .3s var(--ease);
+  animation:chibiRun .42s ease-in-out infinite alternate;
+}
+@keyframes chibiRun{
+  from{transform:translateY(0) rotate(-2.5deg)}
+  to{transform:translateY(-7px) rotate(2.5deg)}
+}
+.loading-pct{
+  margin-top:2px;font-family:var(--en-display);font-size:12px;
+  letter-spacing:.22em;color:rgba(201,185,143,.85);
+}
+body.reduce-motion .loading-chibi{animation:none}
+body.reduce-motion .loading-fill,
+body.reduce-motion .loading-chibi{transition:none}
+
+/* ---------- backlog (文本回顾) ---------- */
+.backlog-sheet{width:min(680px,100%)}
+#backlog-body{display:flex;flex-direction:column;gap:0}
+.bl-entry{
+  position:relative;padding:13px 4px 13px 18px;
+  border-bottom:1px dashed #ddd0b4;
+}
+.bl-entry::before{
+  content:'';position:absolute;left:4px;top:20px;bottom:20px;width:2px;
+  background:#ddd0b4;border-radius:1px;
+}
+.bl-entry:last-child{border-bottom:none}
+.bl-stamp{
+  display:block;font-size:10px;letter-spacing:.18em;color:var(--gold);
+  font-family:var(--en-display);margin-bottom:5px;
+}
+.bl-who{
+  display:inline-block;margin-bottom:5px;padding:2px 12px;
+  background:linear-gradient(180deg,#3a4a31,#2f3d29);color:var(--ivory);
+  border-radius:10px;font-size:12.5px;letter-spacing:.12em;
+}
+.bl-who .en-line{display:inline;color:#cfc4a5;font-size:8.5px;margin-right:6px;letter-spacing:.14em}
+.bl-cn{font-size:14px;line-height:1.85;color:#443b30}
+.bl-en{
+  margin-top:4px;font-size:10.5px;color:var(--rose);
+  text-transform:none;letter-spacing:.03em;line-height:1.6;
+}
+.bl-choice{background:rgba(169,104,116,.05);border-radius:12px;margin:4px 0}
+.bl-choice::before{background:var(--rose)}
+.bl-mark{
+  display:inline-block;margin-bottom:5px;font-size:11px;letter-spacing:.16em;color:var(--rose-deep);
+}
+.bl-choice .bl-cn{font-style:italic;color:var(--rose-deep)}
+
+/* ---------- HUD grows to six buttons ---------- */
+@media(max-width:640px){
+  .hud-nav{grid-template-columns:repeat(6,minmax(0,1fr))}
+}
+@media(max-width:430px){
+  .hud-nav{grid-template-columns:repeat(6,minmax(0,1fr))}
+}
+@media(max-width:640px){
+  .bl-cn{font-size:13px;line-height:1.75}
+  .loading-chibi{width:72px;height:72px}
+  .loading-track{height:84px}
+  .loading-flavor{font-size:13px;margin-bottom:26px}
 }

@@ -1,0 +1,6 @@
+House Rosier v0.5.2
+
+- Damien awareness state added to status display.
+- Damien can show as Aware of You before formal meeting.
+- Alaric title updated to Arch Mage / 大魔导师.
+- Damien identity flow remains separate from formal met state.

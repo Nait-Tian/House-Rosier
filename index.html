@@ -7,9 +7,24 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<link rel="preload" as="image" href="assets/bg/title_manor.webp">
+<link rel="stylesheet" href="css/style.css?v=0.6.1">
 </head>
 <body>
+
+<!-- ============ LOADING ============ -->
+<div id="screen-loading" role="status" aria-label="加载中">
+  <div class="loading-inner">
+    <p class="loading-pretitle en-line">Rosecourt Manor</p>
+    <p class="loading-flavor" id="loading-flavor">白玫瑰正在开放……</p>
+    <div class="loading-track">
+      <div class="loading-track-line"></div>
+      <div class="loading-fill" id="loading-fill"></div>
+      <img id="loading-chibi" class="loading-chibi" src="assets/ui/chibi_nonbinary.webp" alt="" draggable="false">
+    </div>
+    <p class="loading-pct" id="loading-pct">0%</p>
+  </div>
+</div>
 
 <!-- grain overlay -->
 <svg id="grain-defs" width="0" height="0" aria-hidden="true">
@@ -40,17 +55,45 @@
   </div>
 </section>
 
-<!-- ============ GENDER SELECT ============ -->
+<!-- ============ IDENTITY SELECT ============ -->
 <section id="screen-gender" class="screen">
-  <div class="panel-page">
-    <header class="page-head">
+  <div class="panel-page identity-page">
+    <header class="page-head identity-head">
       <p class="en-line">Character</p>
       <h2>你将以怎样的身份醒来</h2>
-      <p class="page-sub">Nait Rosier —— Rosier 家唯一继承人，第二性别固定为 Omega。性别与代词由你决定，并作为本存档的正式设定。</p>
+      <p class="page-sub">性别表达与称呼由你决定，并作为本存档的正式设定。</p>
     </header>
-    <div class="gender-cards" id="gender-cards"></div>
-    <div class="portrait-row">
-      <img src="assets/char/nait.webp" alt="Nait Rosier" class="portrait-preview">
+
+    <div class="identity-carousel" id="identity-carousel" aria-label="身份选择">
+      <button class="identity-arrow prev" id="identity-prev" aria-label="上一个身份">‹</button>
+      <div class="identity-track" id="gender-cards"></div>
+      <button class="identity-arrow next" id="identity-next" aria-label="下一个身份">›</button>
+    </div>
+
+    <div class="identity-dots" id="identity-dots" aria-hidden="true"></div>
+
+    <section class="identity-copy" aria-live="polite">
+      <p class="en-line" id="identity-pronouns"></p>
+      <h3 id="identity-title"></h3>
+      <p id="identity-desc"></p>
+      <p class="identity-address" id="identity-address"></p>
+    </section>
+
+    <button id="identity-confirm" class="identity-confirm-btn">
+      <span class="en-line">Confirm</span>确认这个身份
+    </button>
+  </div>
+
+  <div id="identity-confirm-modal" class="identity-modal hidden" role="dialog" aria-modal="true" aria-labelledby="identity-confirm-title">
+    <div class="identity-modal-card">
+      <button id="identity-modal-close" class="identity-modal-close" aria-label="关闭">×</button>
+      <p class="en-line">Confirm Identity</p>
+      <h3 id="identity-confirm-title">确认身份</h3>
+      <p id="identity-confirm-text"></p>
+      <div class="identity-modal-actions">
+        <button id="identity-modal-back" class="identity-modal-secondary">再想想</button>
+        <button id="identity-modal-go" class="identity-modal-primary">确定开始</button>
+      </div>
     </div>
   </div>
 </section>
@@ -71,6 +114,7 @@
       <button class="hud-btn" id="btn-map"><span class="en-line">Map</span>地图</button>
       <button class="hud-btn" id="btn-status"><span class="en-line">Status</span>状态</button>
       <button class="hud-btn" id="btn-memory"><span class="en-line">Memory</span>记忆<span id="memory-dot" class="dot hidden"></span></button>
+      <button class="hud-btn" id="btn-log"><span class="en-line">Log</span>回顾</button>
       <button class="hud-btn" id="btn-menu"><span class="en-line">Menu</span>菜单</button>
     </nav>
   </header>
@@ -87,10 +131,10 @@
     <div id="dialogue-box">
       <p id="text-en" class="en-line"></p>
       <p id="text-cn"></p>
+      <div id="choices" class="hidden"></div>
+      <div id="feedback-line" class="hidden"></div>
       <div id="continue-hint">▼</div>
     </div>
-    <div id="choices" class="hidden"></div>
-    <div id="feedback-line" class="hidden"></div>
   </div>
 </section>
 
@@ -150,6 +194,18 @@
   </div>
 </div>
 
+<!-- ============ BACKLOG OVERLAY ============ -->
+<div id="overlay-backlog" class="overlay hidden">
+  <div class="sheet backlog-sheet">
+    <button class="sheet-close floating-close" data-close="overlay-backlog" aria-label="关闭">✕</button>
+    <header class="page-head">
+      <p class="en-line">Backlog</p>
+      <h2>文本回顾</h2>
+    </header>
+    <div id="backlog-body"></div>
+  </div>
+</div>
+
 <!-- ============ MENU OVERLAY ============ -->
 <div id="overlay-menu" class="overlay hidden">
   <div class="sheet narrow">
@@ -189,51 +245,56 @@
 
       <div class="ai-section">
         <h3><span class="en-line">AI Dialogue</span>AI 对话层</h3>
-        <p class="ai-note">可选增强：接入你自己的大模型（OpenAI 兼容接口），角色即会以即兴台词回应。没有 Key 时游戏照常完整游玩，所有内容均有剧本原文。<br><span class="en-line" style="text-transform:none;letter-spacing:.03em">Optional. Bring your own key. Without one, the game runs fully on authored text.</span></p>
+        <p class="ai-note">可选增强。不开启 AI 时游戏仍可完整游玩。<br><span class="en-line" style="text-transform:none;letter-spacing:.03em">Optional enhancement. The authored game remains fully playable without AI.</span></p>
         <label class="setting-row">
           <span><span class="en-line">Enable AI</span>启用 AI 对话</span>
           <input type="checkbox" id="ai-enabled">
         </label>
-        <label class="ai-field"><span class="en-line">Endpoint</span>
-          <input type="text" id="ai-endpoint" placeholder="https://api.moonshot.cn/v1" autocomplete="off"></label>
-        <label class="ai-field"><span class="en-line">API Key</span>
-          <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off"></label>
-        <p class="ai-note ai-privacy-note">默认只在当前浏览器会话中保存 Key；关闭标签页/浏览器后不应依赖它继续存在。只有主动开启下方选项才会持久保存。调试日志永不包含原始 Key。<br><span class="en-line" style="text-transform:none">By default, the key is session-only. Persistent storage is opt-in. Debug exports never include the raw key.</span></p>
-        <label class="setting-row">
-          <span><span class="en-line">Remember API Key</span>在此浏览器持续保存 API Key</span>
-          <input type="checkbox" id="ai-remember-key">
-        </label>
-        <label class="ai-field"><span class="en-line">Model</span>
-          <input type="text" id="ai-model" placeholder="kimi-k3" autocomplete="off"></label>
-        <p class="ai-note" style="margin-top:-6px">Kimi 官方当前示例模型：<strong>kimi-k3</strong>。旧版 <code>kimi-k2-0905-preview</code> 会自动迁移。<br><span class="en-line" style="text-transform:none">Current Kimi API example model: kimi-k3.</span></p>
-        <label class="setting-row">
-          <span><span class="en-line">Free Chat</span>自由交谈（菜单「交谈」）</span>
-          <input type="checkbox" id="ai-freechat" checked>
-        </label>
-        <label class="setting-row">
-          <span><span class="en-line">Choice Reactions</span>选项后角色反应</span>
-          <input type="checkbox" id="ai-react" checked>
-        </label>
-        <label class="setting-row">
-          <span><span class="en-line">Ambient Flavor</span>每日氛围随笔</span>
-          <input type="checkbox" id="ai-flavor" checked>
-        </label>
-        <div class="ai-test-row">
-          <button class="btn-block" id="ai-test"><span class="en-line">Test Connection</span>测试连接</button>
-          <span id="ai-test-status"></span>
-        </div>
-        <label class="setting-row">
-          <span><span class="en-line">Include prompt snippets in debug log</span>调试日志包含少量对话片段</span>
-          <input type="checkbox" id="ai-debug-text">
-        </label>
-        <p class="ai-note" style="margin-top:-8px">默认关闭；关闭时导出的调试日志会把输入片段记为 [redacted]。<br><span class="en-line" style="text-transform:none">Off by default. Exported input snippets are redacted unless you opt in.</span></p>
-        <div class="ai-test-row">
-          <button class="btn-block" id="ai-preview-debug"><span class="en-line">Preview Debug Log</span>预览调试日志</button>
-          <button class="btn-block" id="ai-export"><span class="en-line">Export Debug Log</span>导出调试日志</button>
-          <button class="btn-block" id="ai-forget-key"><span class="en-line">Forget API Key</span>清除 API Key</button>
-          <span id="ai-state"></span>
-        </div>
-        <pre id="ai-debug-preview" class="ai-debug-preview hidden"></pre>
+        <p id="ai-state" class="ai-state-line"></p>
+        <details class="ai-advanced">
+          <summary><span><span class="en-line">Advanced AI Settings</span>高级 AI 设置</span><span class="ai-advanced-mark" aria-hidden="true">⌄</span></summary>
+          <div class="ai-advanced-body">
+            <label class="ai-field"><span class="en-line">Endpoint</span>
+              <input type="text" id="ai-endpoint" placeholder="https://api.moonshot.cn/v1" autocomplete="off"></label>
+            <label class="ai-field"><span class="en-line">API Key</span>
+              <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off"></label>
+            <p class="ai-note ai-privacy-note">默认只在当前浏览器会话中保存 Key；只有主动开启下方选项才会持久保存。调试日志永不包含原始 Key。<br><span class="en-line" style="text-transform:none">The key is session-only by default. Persistent storage is opt-in. Debug exports never include the raw key.</span></p>
+            <label class="setting-row">
+              <span><span class="en-line">Remember API Key</span>在此浏览器持续保存 API Key</span>
+              <input type="checkbox" id="ai-remember-key">
+            </label>
+            <label class="ai-field"><span class="en-line">Model</span>
+              <input type="text" id="ai-model" placeholder="kimi-k3" autocomplete="off"></label>
+            <p class="ai-note" style="margin-top:-6px">Kimi 官方当前示例模型：<strong>kimi-k3</strong>。旧版 <code>kimi-k2-0905-preview</code> 会自动迁移。<br><span class="en-line" style="text-transform:none">Current Kimi API example model: kimi-k3.</span></p>
+            <label class="setting-row">
+              <span><span class="en-line">Free Chat</span>自由交谈（菜单「交谈」）</span>
+              <input type="checkbox" id="ai-freechat" checked>
+            </label>
+            <label class="setting-row">
+              <span><span class="en-line">Choice Reactions</span>选项后角色反应</span>
+              <input type="checkbox" id="ai-react" checked>
+            </label>
+            <label class="setting-row">
+              <span><span class="en-line">Ambient Flavor</span>每日氛围随笔</span>
+              <input type="checkbox" id="ai-flavor" checked>
+            </label>
+            <div class="ai-test-row">
+              <button class="btn-block" id="ai-test"><span class="en-line">Test Connection</span>测试连接</button>
+              <span id="ai-test-status"></span>
+            </div>
+            <label class="setting-row">
+              <span><span class="en-line">Include prompt snippets in debug log</span>调试日志包含少量对话片段</span>
+              <input type="checkbox" id="ai-debug-text">
+            </label>
+            <p class="ai-note" style="margin-top:-8px">默认关闭；关闭时导出的调试日志会把输入片段记为 [redacted]。<br><span class="en-line" style="text-transform:none">Off by default. Exported input snippets are redacted unless you opt in.</span></p>
+            <div class="ai-test-row">
+              <button class="btn-block" id="ai-preview-debug"><span class="en-line">Preview Debug Log</span>预览调试日志</button>
+              <button class="btn-block" id="ai-export"><span class="en-line">Export Debug Log</span>导出调试日志</button>
+              <button class="btn-block" id="ai-forget-key"><span class="en-line">Forget API Key</span>清除 API Key</button>
+            </div>
+            <pre id="ai-debug-preview" class="ai-debug-preview hidden"></pre>
+          </div>
+        </details>
       </div>
     </div>
   </div>
@@ -290,6 +351,24 @@
   </div>
 </div>
 
+<!-- ============ WEEK 1 SUMMARY ============ -->
+<div id="overlay-week-summary" class="overlay week-summary-overlay hidden">
+  <div class="week-summary-sheet">
+    <header class="week-summary-head">
+      <p class="en-line">DEMO COMPLETE · DAY 7</p>
+      <h2>七日之后</h2>
+      <p class="week-summary-subtitle">Rosecourt 的第一周</p>
+      <div class="title-rule"><i>❧</i></div>
+    </header>
+    <div id="week-summary-body"></div>
+    <div class="week-summary-footer">
+      <p>你仍然不需要现在就决定过去的自己究竟是谁。</p>
+      <p class="en-line">You still do not have to decide who you were.</p>
+      <button id="week-summary-continue" class="btn-title week-summary-continue"><span class="cn-line">开始第二周</span><span class="en-line">Begin Week Two</span></button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ ENDING ============ -->
 <section id="screen-ending" class="screen">
   <div class="ending-bg"></div>
@@ -299,8 +378,8 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="js/data.js"></script>
+<script src="js/data.js?v=0.6.1"></script>
 <script src="js/ai.js"></script>
-<script src="js/game.js"></script>
+<script src="js/game.js?v=0.6.1"></script>
 </body>
 </html>

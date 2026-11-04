@@ -8,7 +8,7 @@
 const SAVE_KEY  = 'rosecourt_save_v1';      // legacy single slot (migrated on boot)
 const SLOTS_KEY = 'rosecourt_saves_v2';     // { auto, slots:[x3] }
 const SET_KEY   = 'rosecourt_settings_v1';
-const CURRENT_SAVE_VERSION = 4;
+const CURRENT_SAVE_VERSION = 13;
 let pendingLegacySave = null;
 
 const $ = id => document.getElementById(id);
@@ -17,6 +17,33 @@ const chatAvatarOf = c => c.chatAvatar || c.sprite;
 const bondPortraitOf = c => c.bondPortrait || c.sprite;
 
 /* ---------------- state ---------------- */
+const CALLBACK_TRAITS = new Set([
+  'honest_uncertainty','direct_communication','humor_under_pressure','social_ease',
+  'curiosity_about_past','present_focus','accepts_recovery','prioritized_recovery',
+  'knows_own_limits','pushes_limits','honest_vulnerability','guarded_but_present',
+  'family_openness','family_distance','accepts_help','public_composure','strategic_honesty',
+  'independent_reasoning','asserts_boundary','evidence_first','deliberate_accountability',
+  'repair_old_damage','accountability_action','tests_body_memory','practical_action',
+  'responsible_choice','kindness_without_performance','tracks_political_motive',
+  'personal_recognition','protective_action','authority_first','ready_to_be_seen'
+]);
+function callbackState(){
+  if(!S.callbacks) S.callbacks = { traits:{}, history:[] };
+  if(!S.callbacks.traits) S.callbacks.traits = {};
+  if(!Array.isArray(S.callbacks.history)) S.callbacks.history = [];
+  return S.callbacks;
+}
+function markCallbackTrait(name, amount=1, source='choice'){
+  if(!name || !S) return;
+  const cb = callbackState();
+  cb.traits[name] = (cb.traits[name] || 0) + amount;
+  cb.history.push({ trait:name, amount, source, day:S.day, period:S.period });
+  if(cb.history.length > 120) cb.history = cb.history.slice(-120);
+}
+function traitCount(name){
+  return (S && S.callbacks && S.callbacks.traits && S.callbacks.traits[name]) || 0;
+}
+
 const ADDR = {
   male:   { cn:'少爷',      en:'young master' },
   female: { cn:'小姐',      en:'my lady' },
@@ -36,11 +63,13 @@ function freshState(gender){
       damien:  { political_trust:0, personal_trust:0, reputation:0, vulnerability:0 }
     },
     flags: {}, fragments: [], interp: {},
+    callbacks: { traits:{}, history:[] },
     route: { family:0, alaric:0, roderic:0, damien:0, ensemble:0 },
     identity: { continuity:0, transference:0, self_defined:0 },
     responsibility: { high:0, measured:0, low:0 },
     estate: { treasury:5, welfare:5, reputation:5, stability:5, court_influence:0, staff_trust:5 },
     memory: {},          // long-term NPC memories from free chat (engine-written)
+    backlog: [],         // 文本回顾：最近展示的台词与玩家选择（随存档保存）
     seen: {}
   };
 }
@@ -84,9 +113,16 @@ function normalizeState(st){
       if(!m.kind) m.kind = 'player_statement';
       if(!m.source) m.source = 'optional_ai_chat';
     });
-  st.fragments = st.fragments || [];
+  st.fragments = (st.fragments || []).filter(id=>FRAGMENTS[id]);
   st.flags = st.flags || {};
+  st.callbacks = st.callbacks || {traits:{},history:[]};
+  st.callbacks.traits = st.callbacks.traits || {};
+  st.callbacks.history = Array.isArray(st.callbacks.history) ? st.callbacks.history : [];
+  // Legacy builds used boolean behavior flags. Rehydrate one callback count only
+  // when no structured trait count exists; new authored content uses `tag` instead.
+  CALLBACK_TRAITS.forEach(k=>{ if(st.flags[k]===true && !st.callbacks.traits[k]) st.callbacks.traits[k]=1; });
   st.interp = st.interp || {};
+  st.backlog = Array.isArray(st.backlog) ? st.backlog : [];
   st.seen = st.seen || {};
   st.route = Object.assign({family:0,alaric:0,roderic:0,damien:0,ensemble:0}, st.route||{});
   st.identity = Object.assign({continuity:0,transference:0,self_defined:0}, st.identity||{});
@@ -125,8 +161,31 @@ function migratePayload(p, genderOverride){
   q.state = normalizeState(q.state);
   if(!['male','female','free'].includes(q.state.gender)) return null;
   q.state.addr = ADDR[q.state.gender] || ADDR.free;
-  if(!Number.isInteger(q.flowIndex) || q.flowIndex<0 || q.flowIndex>=FLOW.length) q.flowIndex = deriveFlowIndex(q.state);
   const oldVersion = Number.isInteger(q.version) ? q.version : 1;
+  // v6 inserted a Week-1 scene; v7 removed the redundant Day-6 Damien rehearsal; v8 retired obsolete Week-1 fragment entries; v9 restores the Day-3 rain dream as a formal fragment; v10 restores a dedicated Week-1 summary step; v11 makes Evelyne's letter a fixed Day-2 event; v12 inserts a corridor beat before entering the library; v13 fixes the Week-1 summary chapter layout.
+  // Numeric FLOW indices from older layouts are unsafe, so realign by scene when possible.
+  if(oldVersion < 12){
+    const sceneFlow = q.scene ? FLOW.findIndex(s=>s.scene===q.scene) : -1;
+    if(sceneFlow >= 0){
+      q.flowIndex = sceneFlow;
+    } else if((oldVersion === 10 || oldVersion === 11) && Number.isInteger(q.flowIndex)){
+      // v11 inserted the fixed Evelyne-letter scene; v12 inserts a corridor beat immediately before entering the library.
+      q.flowIndex = q.flowIndex >= 5 ? Math.min(q.flowIndex + 1, FLOW.length - 1) : q.flowIndex;
+    } else {
+      q.flowIndex = deriveFlowIndex(q.state);
+    }
+    // A save paused inside the removed rehearsal resumes at the first remaining Day-6 scene.
+    if(q.scene === 'd6_reception') { q.scene=null; q.node=null; q.sceneIsEnding=false; q.flowIndex=deriveFlowIndex(q.state); }
+    // Older Week-1 saves that already completed the Roderic horse scene predate the explicit met flag.
+    if(q.state.seen && q.state.seen.d6_roderic) q.state.flags.met_roderic = true;
+    // v9 saves that already finished the Day-7 closing should land on the restored summary, not replay the closing scene.
+    if(q.state.seen && q.state.seen.d7_closing && q.state.day===7){
+      const summaryFlow = FLOW.findIndex(s=>s.type==='weekSummary' && s.day===7);
+      if(summaryFlow >= 0){ q.scene=null; q.node=null; q.sceneIsEnding=false; q.flowIndex=summaryFlow; }
+    }
+  } else if(!Number.isInteger(q.flowIndex) || q.flowIndex<0 || q.flowIndex>=FLOW.length){
+    q.flowIndex = deriveFlowIndex(q.state);
+  }
   // Exact scene/node resume was introduced later. If an old payload points at an invalid node, resume the flow checkpoint instead.
   if(q.scene && (!SCENES[q.scene] || (q.node && !SCENES[q.scene].nodes[q.node]))){ q.scene=null; q.node=null; q.sceneIsEnding=false; }
   if(oldVersion < 3 && (!q.scene || !q.node)){ q.scene=null; q.node=null; q.sceneIsEnding=false; }
@@ -200,7 +259,7 @@ async function applySave(p){
   const scene = sceneId ? SCENES[sceneId] : null;
   const node = scene && curNode ? scene.nodes[curNode] : null;
   const bg = (node && node.bg) || (scene && scene.bg) || 'bedroom';
-  await Promise.all([preloadImage(`assets/bg/${bg}.webp`), preloadCharacterSprites()]);
+  await preloadWithProgress([`assets/bg/${bg}.webp`, ...Object.values(CHARS).map(c=>c && c.sprite)]);
   setInitialBG(bg);
   show('screen-game');
   warmBackgrounds();
@@ -281,7 +340,12 @@ function applyEffects(fx){
   (fx||[]).forEach(e=>{
     const [kind,...a] = e;
     if(kind==='rel'){ const [c,f,d]=a; if(S.rel[c] && f in S.rel[c]) S.rel[c][f]+=d; }
-    else if(kind==='flag'){ S.flags[a[0]] = a[1]; }
+    else if(kind==='flag'){
+      const [name,value] = a;
+      // Facts / one-off state only. Behavioral repetition belongs to `tag`.
+      S.flags[name] = value;
+    }
+    else if(kind==='tag'){ const [name,amount=1] = a; markCallbackTrait(name,amount,'tag'); }
     else if(kind==='health'){ S.health = Math.max(0, Math.min(100, S.health + a[0])); }
     else if(kind==='rep'){ S.reputation += a[0]; }
     else if(kind==='route'){ const [r,d]=a; if(S.route && r in S.route) S.route[r]+=d; }
@@ -295,7 +359,7 @@ function collectFragment(id){
   if(S.fragments.includes(id)) return;
   S.fragments.push(id);
   $('memory-dot').classList.remove('hidden');
-  toast(`获得记忆碎片 · Memory Fragment —— ${FRAGMENTS[id].titleCn}`);
+  toast(`Memory Fragment · 记忆碎片 — ${FRAGMENTS[id].titleCn}`);
 }
 
 /* ---------------- background & sprite ---------------- */
@@ -305,22 +369,82 @@ function preloadImage(url){
   if(assetPreload.has(url)) return assetPreload.get(url);
   const task = new Promise(resolve=>{
     const img = new Image();
-    img.onload = async ()=>{
-      try{ if(img.decode) await img.decode(); }catch(e){}
-      resolve(url);
+    let settled = false;
+    // Never let a stalled network request or a hanging decode() block the game:
+    // decode() is fire-and-forget (it can stall indefinitely in hidden tabs),
+    // and a watchdog guarantees the promise resolves even if neither
+    // onload nor onerror ever fires.
+    const done = ()=>{ if(!settled){ settled = true; clearTimeout(watchdog); resolve(url); } };
+    const watchdog = setTimeout(done, 15000);
+    img.onload = ()=>{
+      try{ if(img.decode) img.decode().catch(()=>{}); }catch(e){}
+      done();
     };
-    img.onerror = ()=>resolve(url);
+    img.onerror = done;
     img.src = url;
   });
   assetPreload.set(url, task);
   return task;
 }
+
+/* ---------------- loading screen (Q版奔跑加载画面) ---------------- */
+const CHIBI_SRCS = ['assets/ui/chibi_male.webp','assets/ui/chibi_nonbinary.webp','assets/ui/chibi_female.webp'];
+const LOADING_FLAVORS = [
+  '白玫瑰正在开放……', '露水还停在花瓣上。', '图书室的窗留着一条缝。',
+  '马蹄声正在穿过庭院。', '茶具已经温好了。'
+];
+let loadingShownAt = 0;
+function showLoading(){
+  const el = $('screen-loading');
+  if(!el) return;
+  // 三个性别表达随机出场
+  $('loading-chibi').src = CHIBI_SRCS[Math.floor(Math.random()*CHIBI_SRCS.length)];
+  $('loading-flavor').textContent = LOADING_FLAVORS[Math.floor(Math.random()*LOADING_FLAVORS.length)];
+  setLoadingProgress(0);
+  el.classList.remove('done');
+  el.classList.remove('hidden');
+  loadingShownAt = performance.now();
+}
+function setLoadingProgress(p){
+  const pct = Math.max(0, Math.min(1, p));
+  const fill = $('loading-fill'), chibi = $('loading-chibi'), label = $('loading-pct');
+  if(fill) fill.style.width = (pct*100).toFixed(1) + '%';
+  if(chibi) chibi.style.left = `calc(${(pct*100).toFixed(1)}% - ${(pct*80).toFixed(1)}px)`;
+  if(label) label.textContent = Math.round(pct*100) + '%';
+}
+function hideLoading(){
+  const el = $('screen-loading');
+  if(!el || el.classList.contains('hidden')) return;
+  const minShow = 650;
+  const wait = Math.max(0, minShow - (performance.now() - loadingShownAt));
+  setTimeout(()=>{
+    el.classList.add('done');
+    setTimeout(()=>el.classList.add('hidden'), 480);
+  }, wait);
+}
+async function preloadWithProgress(urls){
+  const uniq = [...new Set(urls)].filter(Boolean);
+  showLoading();
+  let done = 0;
+  await Promise.all(uniq.map(u=>preloadImage(u).then(r=>{
+    done++; setLoadingProgress(done/uniq.length); return r;
+  })));
+  setLoadingProgress(1);
+  hideLoading();
+}
 function preloadCharacterSprites(){
   return Promise.all(Object.values(CHARS).map(c=>c && c.sprite ? preloadImage(c.sprite) : Promise.resolve()));
 }
 function warmBackgrounds(){
-  ['bedroom','sitting_room','library','garden','training','ballroom','market','academy','palace','conservatory','city_gate','estate_village','riverside','old_road']
-    .forEach(k=>preloadImage(`assets/bg/${k}.webp`));
+  // Spread non-critical background warming across idle time so it never
+  // competes with the scene the player is actually watching.
+  const keys = ['bedroom','sitting_room','library','garden','training','ballroom','market','academy','palace','conservatory','city_gate','estate_village','riverside','old_road'];
+  const idle = window.requestIdleCallback || (cb=>setTimeout(cb, 1200));
+  const step = i=>{
+    if(i >= keys.length) return;
+    preloadImage(`assets/bg/${keys[i]}.webp`).then(()=>idle(()=>step(i+1)));
+  };
+  idle(()=>step(0));
 }
 function setInitialBG(key){
   const url = `assets/bg/${key}.webp`;
@@ -335,11 +459,14 @@ function setBG(key){
   const url = `assets/bg/${key}.webp`;
   const inEl = bgActive==='a' ? $('bg-layer-b') : $('bg-layer-a');
   const outEl = bgActive==='a' ? $('bg-layer-a') : $('bg-layer-b');
+  lockStoryInput();
   preloadImage(url).then(()=>{
     inEl.style.backgroundImage = `url('${url}')`;
     inEl.classList.add('on'); outEl.classList.remove('on');
     bgActive = bgActive==='a' ? 'b' : 'a';
-  });
+    const wait = document.body.classList.contains('reduce-motion') ? 30 : 520;
+    setTimeout(unlockStoryInput, wait);
+  }).catch(()=>unlockStoryInput());
 }
 function applySpriteFit(charId){
   const el = $('sprite-main');
@@ -399,6 +526,17 @@ window.addEventListener('resize', ()=>{
   if(id) applySpriteFit(id);
 });
 
+/* ---------------- transition input lock ---------------- */
+let storyInputLocks = 0;
+function lockStoryInput(){
+  storyInputLocks++;
+  document.body.classList.add('story-transition');
+}
+function unlockStoryInput(){
+  storyInputLocks = Math.max(0, storyInputLocks - 1);
+  if(storyInputLocks===0) document.body.classList.remove('story-transition');
+}
+
 /* ---------------- flow ---------------- */
 function runFlow(){
   const step = FLOW[flowIndex];
@@ -411,6 +549,15 @@ function runFlow(){
     const next = FLOW[flowIndex];
     if(next && next.day){ showDayCard(next.day, ()=>runFlow()); }
     else runFlow();
+    return;
+  }
+  if(step.type==='weekSummary'){
+    clearSpriteImmediate();
+    curScene = null; curNode = null; sceneIsEnding = false;
+    S.day = step.day || S.day; S.period = step.period || S.period;
+    if(step.loc) S.loc = step.loc;
+    updateHUD(); saveGame(true);
+    showWeek1Summary();
     return;
   }
   if(step.type==='schedule'){
@@ -430,6 +577,7 @@ function runFlow(){
 }
 
 function showDayCard(day, cb){
+  lockStoryInput();
   const numCn = dayCn(day);
   const card = $('day-card');
   $('day-card-en').textContent = `Day ${day}`;
@@ -451,7 +599,7 @@ function showDayCard(day, cb){
   }
   setTimeout(()=>{
     card.classList.remove('on');
-    setTimeout(()=>{ card.classList.add('hidden'); cb(); }, 950);
+    setTimeout(()=>{ card.classList.add('hidden'); cb(); unlockStoryInput(); }, 950);
   }, 2000);
 }
 
@@ -466,6 +614,20 @@ function startScene(sceneId, isEnding){
   gotoNode(sc.start, isEnding);
 }
 let sceneIsEnding = false;
+function branchRuleMatches(b){
+  if(!b) return false;
+  if(Array.isArray(b.all) && !b.all.every(branchRuleMatches)) return false;
+  if(Array.isArray(b.any) && !b.any.some(branchRuleMatches)) return false;
+  if(b.flag !== undefined){
+    const wanted = b.value===undefined ? true : b.value;
+    if(S.flags[b.flag] !== wanted) return false;
+  }
+  if(b.notFlag !== undefined && S.flags[b.notFlag]===true) return false;
+  if(b.traitGte){ const [name,min] = b.traitGte; if(traitCount(name) < min) return false; }
+  if(b.relGte){ const [c,f,min] = b.relGte; if(!S.rel[c] || Number(S.rel[c][f]||0) < min) return false; }
+  if(b.routeGte){ const [r,min] = b.routeGte; if(Number((S.route&&S.route[r])||0) < min) return false; }
+  return true;
+}
 function gotoNode(nodeId, endingFlag){
   if(endingFlag !== undefined) sceneIsEnding = endingFlag;
   const sc = SCENES[curScene];
@@ -473,7 +635,7 @@ function gotoNode(nodeId, endingFlag){
   curNode = nodeId;
   if(n.bg) setBG(n.bg);
   if(n.branch){
-    const hit = n.branch.find(b=>S.flags[b.flag]=== (b.value===undefined? true : b.value));
+    const hit = n.branch.find(branchRuleMatches);
     gotoNode(hit ? hit.goto : n.else);
     return;
   }
@@ -481,6 +643,53 @@ function gotoNode(nodeId, endingFlag){
   if(n.memory) collectFragment(n.memory);
   renderNode(n);
   saveGame(true);
+}
+
+/* ---------------- backlog (文本回顾) ---------------- */
+const BACKLOG_MAX = 240;
+function backlogPush(entry){
+  if(!S) return;
+  if(!Array.isArray(S.backlog)) S.backlog = [];
+  const last = S.backlog[S.backlog.length - 1];
+  // resume/re-render can re-show the same beat; never record it twice
+  if(last && last.kind === entry.kind && last.sp === entry.sp && last.cn === entry.cn) return;
+  S.backlog.push(entry);
+  if(S.backlog.length > BACKLOG_MAX) S.backlog = S.backlog.slice(-BACKLOG_MAX);
+}
+function logLine(sp, en, cn){
+  if(!en && !cn) return;
+  backlogPush({ kind:'line', sp:sp || null, en:en || '', cn:cn || '', day:S ? S.day : 0, period:S ? S.period : '' });
+}
+function logChoice(en, cn){
+  backlogPush({ kind:'choice', sp:null, en:en || '', cn:cn || '', day:S ? S.day : 0, period:S ? S.period : '' });
+}
+function openBacklog(){
+  const body = $('backlog-body');
+  const entries = (S && Array.isArray(S.backlog)) ? S.backlog : [];
+  if(!entries.length){
+    body.innerHTML = `<div class="memory-empty">还没有可以回顾的内容。<br><span class="en-line" style="text-transform:none">Nothing to look back on yet.</span></div>`;
+  } else {
+    body.innerHTML = entries.map(e=>{
+      const stamp = e.day ? `<span class="bl-stamp">第${dayCn(e.day)}日 · ${(periodText(e.period)||{}).cn || ''}</span>` : '';
+      if(e.kind === 'choice'){
+        return `<div class="bl-entry bl-choice">${stamp}<span class="bl-mark">❧ 你的选择</span>
+          <p class="bl-cn">${esc(e.cn)}</p>
+          <p class="bl-en en-line">${esc(e.en)}</p></div>`;
+      }
+      const c = e.sp && CHARS[e.sp];
+      const who = c ? `<span class="bl-who"><span class="en-line">${esc(c.en)}</span>${esc(c.cn)}</span>` : '';
+      return `<div class="bl-entry">${stamp}${who}
+        <p class="bl-cn">${esc(e.cn)}</p>
+        <p class="bl-en en-line">${esc(e.en)}</p></div>`;
+    }).join('');
+  }
+  $('overlay-backlog').classList.remove('hidden');
+  // newest line at the bottom, like a theatre script
+  // (wait one paint: a freshly-unhidden sheet reports its pre-layout height)
+  setTimeout(()=>{
+    const sheet = $('overlay-backlog').querySelector('.sheet');
+    if(sheet) sheet.scrollTop = sheet.scrollHeight;
+  }, 80);
 }
 
 function renderNode(n){
@@ -507,6 +716,7 @@ function renderNode(n){
   const cnEl = $('text-cn');
   cnEl.textContent = sub(cn,'cn');
   cnEl.classList.toggle('narration', !n.sp);
+  logLine(n.sp || null, sub(en,'en'), sub(cn,'cn'));
 
   // memory fragment node styling
   box.style.borderLeft = n.memory ? '3px solid var(--rose)' : '1px solid #c9b98f';
@@ -538,21 +748,42 @@ function renderChoices(ch){
     b.onclick = ev=>{
       ev.stopPropagation();
       applyEffects(op.fx);   // engine resolves all state effects FIRST (Contract §8)
+      logChoice(sub(op.en,'en'), sub(op.cn,'cn'));
       wrap.classList.add('hidden'); wrap.innerHTML='';
       const fb = $('feedback-line');
       if(op.fb && (op.fb.cn || op.fb.en)){
         fb.innerHTML = `<span class="en-line">${sub(op.fb.en||'','en')}</span>${sub(op.fb.cn||'','cn')}`;
         fb.classList.remove('hidden');
       }
-      // Optional AI post-choice reaction — garnish only, never blocks flow (§8/§21)
+      // Choice feedback behaves like a normal dialogue beat: when feedback is shown,
+      // the story waits for the player to tap the dialogue box before advancing.
+      const hasFeedback = !!(op.fb && (op.fb.cn || op.fb.en));
+      const box = $('dialogue-box');
+      const hint = $('continue-hint');
+      let done = false;
+      const proceed = ()=>{
+        if(done) return;
+        done = true;
+        box.onclick = null;
+        gotoNode(op.goto);
+      };
+
+      if(hasFeedback){
+        hint.classList.remove('hidden');
+        hint.textContent = '❧';
+        box.onclick = proceed;
+      }
+
+      // Optional AI post-choice reaction — garnish only, never blocks flow (§8/§21).
+      // If feedback is visible, the player may advance at any time by tapping.
       const useAI = op.aiReact && window.AI && AI.conf && AI.conf.enabled && AI.conf.react && AI.ready();
-      if(!useAI){ setTimeout(()=>gotoNode(op.goto), op.fb ? 900 : 60); return; }
+      if(!useAI){
+        if(!hasFeedback) setTimeout(proceed, 60);
+        return;
+      }
       const pend = document.createElement('span');
       pend.className = 'fb-pending'; pend.textContent = '· · ·';
       fb.appendChild(pend); fb.classList.remove('hidden');
-      let done = false;
-      const proceed = ()=>{ if(!done){ done = true; gotoNode(op.goto); } };
-      const timer = setTimeout(proceed, 3400);   // hard cap — story never waits on AI
       AI.postChoice(op.aiReact, sub(op.en,'en')).then(r=>{
         pend.remove();
         if(r && !done){
@@ -560,9 +791,16 @@ function renderChoices(ch){
           div.className = 'fb-ai';
           div.innerHTML = `<span class="en-line">${esc(r.en)}</span>${esc(r.cn)}`;
           fb.appendChild(div);
-          clearTimeout(timer);
-          setTimeout(proceed, 1800);
         }
+        // AI-only reactions (without authored feedback) still need a manual tap once visible.
+        if(!hasFeedback && !done){
+          hint.classList.remove('hidden');
+          hint.textContent = '❧';
+          box.onclick = proceed;
+        }
+      }).catch(()=>{
+        pend.remove();
+        if(!hasFeedback && !done) proceed();
       });
     };
     wrap.appendChild(b);
@@ -662,6 +900,8 @@ const REL_CAP = 16;
 function charMet(id){
   if(id === 'elise') return true;
   if(id === 'lucien') return S.day >= 2;
+  if(id === 'damien') return !!(S.flags.met_damien || S.flags.damien_awareness_from_lucien || (S.route&&S.route.damien>=1));
+  if(id === 'alaric') return !!(S.flags.met_alaric || S.flags.alaric_awareness);
   return !!S.flags['met_' + id];
 }
 function bondCard(id){
@@ -674,8 +914,12 @@ function bondCard(id){
         <div class="rel-stage">尚未谋面 · Not yet met</div>
       </div></div>`;
   }
-  const stage = S.rel[id] ? relStage(id)
-    : (id==='elise' ? '多年信赖 · Devoted' : '血脉 · Family');
+  const stage = id==='damien' && !S.flags.met_damien
+    ? '已关注 · Aware of You'
+    : id==='alaric' && !S.flags.met_alaric
+    ? '已听闻 · Heard of You'
+    : (S.rel[id] ? relStage(id)
+    : (id==='elise' ? '多年信赖 · Devoted' : '血脉 · Family'));
   const vars = S.rel[id]
     ? `<div class="bond-vars">` + Object.entries(S.rel[id]).map(([f,v])=>{
         const meta = REL_FIELDS[f] || {cn:f, en:f};
@@ -814,27 +1058,32 @@ function openSaves(mode){   // 'save' | 'load'
   [{kind:'auto', i:-1, p:all.auto, name:'自动存档 · Auto'}]
     .concat(all.slots.map((p,i)=>({kind:'slot', i, p, name:`存档 ${i+1} · Slot ${i+1}`})))
     .forEach(r=>{
-      const div = document.createElement('div');
+      const row = document.createElement('div');
       const chk = r.p ? inspectSave(r.p) : null;
-      div.className = 'slot-row' + (r.p ? (chk.ok ? '' : ' incompatible') : ' empty');
-      div.innerHTML = `
-        <div class="slot-info">
-          <div class="slot-name">${r.name}</div>
-          <div class="slot-desc">${r.p ? (chk.ok ? slotLabel(r.p) + ' · ' + fmtSaveTime(r.p.savedAt) + (chk.needsGender ? ' · 需确认性别' : '') : chk.reason) : '空 · Empty'}</div>
-        </div>
-        ${r.p ? '<button class="slot-del" title="删除 · Delete">✕</button>' : ''}`;
+      row.className = 'slot-row' + (r.p ? (chk.ok ? '' : ' incompatible') : ' empty');
       const canAct = mode==='save' ? r.kind!=='auto' : !!r.p && chk.ok;
+      const desc = r.p ? (chk.ok ? slotLabel(r.p) + ' · ' + fmtSaveTime(r.p.savedAt) + (chk.needsGender ? ' · 需确认性别' : '') : chk.reason) : '空 · Empty';
+      const actionLabel = mode==='save'
+        ? `保存到${r.name.replace(' · ','，')}${r.p ? '，覆盖现有存档' : ''}`
+        : `读取${r.name.replace(' · ','，')}${r.p ? '，'+slotLabel(r.p) : '，空槽位'}`;
+      row.innerHTML = `
+        <button type="button" class="slot-main${canAct ? ' act' : ''}" ${canAct ? '' : 'disabled'} aria-label="${actionLabel}">
+          <span class="slot-info">
+            <span class="slot-name">${r.name}</span>
+            <span class="slot-desc">${desc}</span>
+          </span>
+        </button>
+        ${r.p ? '<button type="button" class="slot-del" title="删除 · Delete" aria-label="删除 '+r.name+'">✕</button>' : ''}`;
+      const main = row.querySelector('.slot-main');
       if(canAct){
-        div.classList.add('act');
-        div.onclick = ev=>{
-          if(ev.target.classList.contains('slot-del')) return;
+        main.onclick = ()=>{
           if(mode==='save'){ saveToSlot(r.i); toast('已保存 · Saved'); openSaves('save'); }
           else { $('overlay-saves').classList.add('hidden'); applySave(r.p); }
         };
       }
-      const del = div.querySelector('.slot-del');
-      if(del) del.onclick = ev=>{ ev.stopPropagation(); deleteSave(r.kind, r.i); openSaves(mode); };
-      wrap.appendChild(div);
+      const del = row.querySelector('.slot-del');
+      if(del) del.onclick = ()=>{ deleteSave(r.kind, r.i); openSaves(mode); };
+      wrap.appendChild(row);
     });
   $('overlay-saves').classList.remove('hidden');
 }
@@ -886,6 +1135,69 @@ function openMemory(){
     });
   }
   $('overlay-memory').classList.remove('hidden');
+}
+
+/* ---------------- Week 1 summary ---------------- */
+function getWeek1PlayerSummary(){
+  const t = S.tags || {};
+  if((t.honest_uncertainty||0) >= 2) return {
+    cn:'别人看到的：一个敢于说“我不知道”，却没有因此交出判断力的人。',
+    en:'What people saw: someone willing to say “I do not know” without surrendering judgment.'
+  };
+  if((t.humor_under_pressure||0) >= 2) return {
+    cn:'别人看到的：一个会在压力太重的时候，让整个房间重新喘口气的人。',
+    en:'What people saw: someone who can let a room breathe when pressure becomes too heavy.'
+  };
+  if((t.independent_reasoning||0) >= 2) return {
+    cn:'别人看到的：一个在接受问题的前提之前，会先追问“这个问题究竟想证明什么”的人。',
+    en:'What people saw: someone who asks what a question is really trying to prove before accepting its premise.'
+  };
+  if((t.public_composure||0) >= 2) return {
+    cn:'别人看到的：一个能够站在公众面前，却不让公众决定整场谈话方向的人。',
+    en:'What people saw: someone capable of standing in public without allowing the public to define the entire conversation.'
+  };
+  return {
+    cn:'别人看到的：不是一个已经完成的答案，而是一个正在当下做出选择的人。',
+    en:'What people saw: not a finished answer, but a person making decisions in real time.'
+  };
+}
+function showWeek1Summary(){
+  const body = $('week-summary-body');
+  if(!body) return;
+  const player = getWeek1PlayerSummary();
+  const rel=[];
+  if(S.flags.damien_first_stirring || (S.route&&S.route.damien>=1)) rel.push({name:'Damien',cn:'已经不再只关心 Rosier 在政治上是否稳定。',en:'His attention has moved beyond Rosier’s political stability.'});
+  if(S.flags.alaric_first_stirring || (S.route&&S.route.alaric>=2)) rel.push({name:'Alaric',cn:'问题正在越来越私人化——即使他依然把它们说得像研究。',en:'His questions are becoming increasingly personal, however carefully he phrases them as research.'});
+  if(S.flags.roderic_first_stirring || (S.route&&S.route.roderic>=2)) rel.push({name:'Roderic',cn:'已经开始理所当然地假设：你们还会有下一次。',en:'He has begun to assume there will be a next time.'});
+  if(S.flags.family_first_belonging) rel.push({name:'Rosecourt',cn:'正在悄悄变成某种不只是“你碰巧醒来的地方”的存在。',en:'It is beginning to feel like more than the place where you happened to wake.'});
+
+  const weekFragmentIds=['frag_letter','frag_rain_roses'];
+  const found=weekFragmentIds.filter(id=>(S.fragments||[]).includes(id));
+  const memoryItems=found.map(id=>{
+    const f=FRAGMENTS[id];
+    return `<div class="week-summary-item"><strong>${esc(f.titleCn)}</strong><span class="en-line">${esc(f.titleEn)}</span></div>`;
+  }).join('') || '<div class="week-summary-item">这一周没有留下可确认的记忆碎片。<span class="en-line">No formal memory fragment was collected this week.</span></div>';
+  const relItems=rel.map(r=>`<div class="week-summary-item"><strong>${esc(r.name)}</strong> · ${esc(r.cn)}<span class="en-line">${esc(r.en)}</span></div>`).join('') || '<div class="week-summary-item">关系仍然开放，没有哪一种靠近被提前定义。<span class="en-line">The relationships remain open; no direction has been decided for you.</span></div>';
+
+  body.innerHTML=`
+    <section class="week-summary-section">
+      <div class="week-summary-kicker">The person they met</div>
+      <h3>这一周的你</h3>
+      <p>${esc(player.cn)}</p>
+      <p class="en-line" style="margin-top:5px;font-size:10.5px;opacity:.68;text-transform:none;letter-spacing:.04em">${esc(player.en)}</p>
+    </section>
+    <section class="week-summary-section">
+      <div class="week-summary-kicker">Relationships</div>
+      <h3>关系变化</h3>
+      <div class="week-summary-list">${relItems}</div>
+    </section>
+    <section class="week-summary-section">
+      <div class="week-summary-kicker">Memory Fragments</div>
+      <h3>身份线索</h3>
+      <div class="week-summary-memory-count">${found.length} / ${weekFragmentIds.length} FOUND</div>
+      <div class="week-summary-list">${memoryItems}</div>
+    </section>`;
+  $('overlay-week-summary').classList.remove('hidden');
 }
 
 /* ---------------- ending ---------------- */
@@ -1066,7 +1378,7 @@ async function newGame(gender){
   S = freshState(gender);
   flowIndex = 0; curScene = null; curNode = null; sceneIsEnding = false;
   const all = loadAllSaves(); all.auto = null; writeAllSaves(all);
-  await Promise.all([preloadImage('assets/bg/bedroom.webp'), preloadCharacterSprites()]);
+  await preloadWithProgress(['assets/bg/bedroom.webp', ...Object.values(CHARS).map(c=>c && c.sprite)]);
   setInitialBG('bedroom');
   show('screen-game');
   warmBackgrounds();
@@ -1097,7 +1409,7 @@ async function newPrototype(gender){
   flowIndex = FLOW.findIndex(s=>s.day===8);
   curScene = null; curNode = null; sceneIsEnding = false;
   const all = loadAllSaves(); all.auto = null; writeAllSaves(all);
-  await Promise.all([preloadImage('assets/bg/sitting_room.webp'), preloadCharacterSprites()]);
+  await preloadWithProgress(['assets/bg/sitting_room.webp', ...Object.values(CHARS).map(c=>c && c.sprite)]);
   setInitialBG('sitting_room');
   show('screen-game');
   warmBackgrounds();
@@ -1109,29 +1421,104 @@ function boot(){
   migrateLegacySave();
   applySettings();
   refreshTitleSave();
+  // 首屏：标题背景 + 身份立绘 + Q版素材，完成后收起加载画面
+  preloadWithProgress([
+    'assets/bg/title_manor.webp',
+    'assets/identity/nait_male.webp','assets/identity/nait_nonbinary.webp','assets/identity/nait_female.webp',
+    ...CHIBI_SRCS
+  ]);
 
-  // gender cards
+  // identity carousel: gender expression + title, with confirmation before starting.
   const genders = [
-    {id:'male',   cn:'男性', en:'He / Him', desc:'以「少爷 · young master」的身份被庄园迎接。'},
-    {id:'female', cn:'女性', en:'She / Her', desc:'以「小姐 · my lady」的身份被庄园迎接。'},
-    {id:'free',   cn:'不作定义', en:'They / Them', desc:'不愿被定义。庄园称你为「Nait 大人 · Lord Nait」。'},
+    {
+      id:'male', cn:'男性', en:'He / Him', shortAddr:'young master',
+      addrCn:'少爷', addrEn:'young master', portrait:'assets/identity/nait_male.webp',
+      desc:'Nait Rosier —— Rosier 家唯一继承人，第二性别固定为 Omega。你将以男性身份醒来；其余核心背景设定保持不变。'
+    },
+    {
+      id:'free', cn:'非二元', en:'They / Them', shortAddr:'lord',
+      addrCn:'Nait 大人', addrEn:'Lord Nait', portrait:'assets/identity/nait_nonbinary.webp',
+      desc:'Nait Rosier —— Rosier 家唯一继承人，第二性别固定为 Omega。你不愿被传统性别定义；其余核心背景设定保持不变。'
+    },
+    {
+      id:'female', cn:'女性', en:'She / Her', shortAddr:'my lady',
+      addrCn:'小姐', addrEn:'my lady', portrait:'assets/identity/nait_female.webp',
+      desc:'Nait Rosier —— Rosier 家唯一继承人，第二性别固定为 Omega。你将以女性身份醒来；其余核心背景设定保持不变。'
+    },
   ];
-  $('gender-cards').innerHTML = '';
-  genders.forEach(g=>{
-    const a = ADDR[g.id];
+  let selectedIdentity = 1; // default: nonbinary / existing Nait presentation
+  const track = $('gender-cards');
+  const dots = $('identity-dots');
+  track.innerHTML = '';
+  dots.innerHTML = '';
+
+  genders.forEach((g,i)=>{
     const b = document.createElement('button');
-    b.className = 'gender-card';
-    b.innerHTML = `<span class="en-line">${g.en}</span><h3>${g.cn}</h3><p>${g.desc}</p><span class="addr">称呼 · ${a.cn} · ${a.en}</span>`;
-    b.onclick = ()=>{
-      const mode=startMode; startMode='normal';
-      const sub = document.querySelector('#screen-gender .page-sub');
-      if(sub) sub.textContent = 'Nait Rosier —— Rosier 家唯一继承人，第二性别固定为 Omega。性别与代词由你决定，并作为本存档的正式设定。';
-      if(mode==='migrate-save') resumeLegacyGender(g.id);
-      else if(mode==='prototype') newPrototype(g.id);
-      else newGame(g.id);
-    };
-    $('gender-cards').appendChild(b);
+    b.className = 'identity-card';
+    b.type = 'button';
+    b.dataset.index = i;
+    b.setAttribute('aria-label', `${g.cn} · ${g.addrCn} · ${g.shortAddr}`);
+    b.innerHTML = `<img src="${g.portrait}" alt="Nait Rosier · ${g.cn}"><span class="identity-card-label"><strong>${g.cn}</strong><span>${g.addrCn} · ${g.shortAddr}</span></span>`;
+    b.onclick = ()=>{ selectedIdentity=i; renderIdentity(); };
+    track.appendChild(b);
+
+    const d = document.createElement('span');
+    d.className = 'identity-dot';
+    dots.appendChild(d);
   });
+
+  function renderIdentity(){
+    const len=genders.length;
+    [...track.children].forEach((card,i)=>{
+      let diff=(i-selectedIdentity+len)%len;
+      if(diff===len-1) diff=-1;
+      card.dataset.pos = diff===0?'0':diff===1?'1':diff===-1?'-1':'hidden';
+      card.setAttribute('aria-pressed', diff===0?'true':'false');
+    });
+    [...dots.children].forEach((d,i)=>d.classList.toggle('on',i===selectedIdentity));
+    const g=genders[selectedIdentity];
+    $('identity-pronouns').textContent=g.en;
+    $('identity-title').textContent=g.cn;
+    $('identity-desc').textContent=g.desc;
+    $('identity-address').textContent=`称呼 · ${g.addrCn} · ${g.addrEn}`;
+  }
+  function rotateIdentity(delta){
+    selectedIdentity=(selectedIdentity+delta+genders.length)%genders.length;
+    renderIdentity();
+  }
+  $('identity-prev').onclick=()=>rotateIdentity(-1);
+  $('identity-next').onclick=()=>rotateIdentity(1);
+
+  let swipeStartX=null;
+  const carousel=$('identity-carousel');
+  carousel.addEventListener('touchstart',e=>{ swipeStartX=e.changedTouches[0].clientX; },{passive:true});
+  carousel.addEventListener('touchend',e=>{
+    if(swipeStartX==null) return;
+    const dx=e.changedTouches[0].clientX-swipeStartX; swipeStartX=null;
+    if(Math.abs(dx)>42) rotateIdentity(dx<0?1:-1);
+  },{passive:true});
+
+  const confirmModal=$('identity-confirm-modal');
+  const closeIdentityModal=()=>confirmModal.classList.add('hidden');
+  $('identity-confirm').onclick=()=>{
+    const g=genders[selectedIdentity];
+    $('identity-confirm-text').innerHTML=`您将以「<strong>${g.addrCn} · ${g.addrEn}</strong>」的称呼开始，确定吗？`;
+    confirmModal.classList.remove('hidden');
+  };
+  $('identity-modal-close').onclick=closeIdentityModal;
+  $('identity-modal-back').onclick=closeIdentityModal;
+  confirmModal.addEventListener('click',e=>{ if(e.target===confirmModal) closeIdentityModal(); });
+  $('identity-modal-go').onclick=()=>{
+    const g=genders[selectedIdentity];
+    const mode=startMode; startMode='normal';
+    closeIdentityModal();
+    const sub = document.querySelector('#screen-gender .page-sub');
+    if(sub) sub.textContent = 'Nait Rosier —— Rosier 家唯一继承人，第二性别固定为 Omega。性别表达与称呼由你决定，并作为本存档的正式设定。';
+    if(mode==='migrate-save') resumeLegacyGender(g.id);
+    else if(mode==='prototype') newPrototype(g.id);
+    else newGame(g.id);
+  };
+  renderIdentity();
 
   $('btn-new').onclick = ()=>{ startMode='normal'; show('screen-gender'); };
   $('btn-prototype').onclick = ()=>{ startMode='prototype'; show('screen-gender'); };
@@ -1141,9 +1528,17 @@ function boot(){
   };
   $('btn-title-settings').onclick = openSettings;
 
+  $('week-summary-continue').onclick = ()=>{
+    $('overlay-week-summary').classList.add('hidden');
+    flowIndex++;
+    saveGame(true);
+    runFlow();
+  };
+
   $('btn-status').onclick = openStatus;
   $('btn-map').onclick = openMap;
   $('btn-memory').onclick = openMemory;
+  $('btn-log').onclick = openBacklog;
   $('btn-talk').onclick   = openTalk;
   $('btn-menu').onclick  = ()=>$('overlay-menu').classList.remove('hidden');
   $('btn-save').onclick  = ()=>openSaves('save');
@@ -1152,7 +1547,7 @@ function boot(){
   $('btn-menu-settings').onclick = openSettings;
   $('btn-to-title').onclick = ()=>{
     saveGame(true);
-    ['overlay-menu','overlay-status','overlay-memory','overlay-schedule','overlay-map','overlay-talk','overlay-saves','overlay-codex']
+    ['overlay-menu','overlay-status','overlay-memory','overlay-schedule','overlay-map','overlay-talk','overlay-saves','overlay-codex','overlay-week-summary','overlay-backlog']
       .forEach(o=>$(o).classList.add('hidden'));
     maybeSummarizeTalk();
     refreshTitleSave(); show('screen-title');
@@ -1239,6 +1634,11 @@ function boot(){
 }
 
 /* settings opener — re-syncs fields from config and refreshes the AI status line */
+function syncOverlayLock(){
+  const anyOpen = [...document.querySelectorAll('.overlay, .identity-modal')].some(el=>!el.classList.contains('hidden'));
+  document.body.classList.toggle('overlay-open', anyOpen);
+}
+
 function openSettings(){
   if(window.AI && AI.conf){
     const f = {enabled:'ai-enabled', endpoint:'ai-endpoint', key:'ai-key', rememberKey:'ai-remember-key',
@@ -1260,5 +1660,12 @@ function openSettings(){
     }
   }
   $('overlay-settings').classList.remove('hidden');
+  syncOverlayLock();
 }
-document.addEventListener('DOMContentLoaded', boot);
+
+const overlayLockObserver = new MutationObserver(syncOverlayLock);
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.querySelectorAll('.overlay, .identity-modal').forEach(el=>overlayLockObserver.observe(el,{attributes:true,attributeFilter:['class']}));
+  boot();
+  syncOverlayLock();
+});
